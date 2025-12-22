@@ -1,4 +1,4 @@
-import server from "./server.js";
+import server from "./utils/server.js";
 import { adapt } from "./utils/adapt.js";
 import { PathToRegex } from "./utils/handler.js";
 

@@ -5,9 +5,9 @@ import {
   isSendAble,
   matchPath,
   runIntercept,
-} from "./utils/handler.js";
-import bodyParser from "./utils/parser.js";
-import responseMethods from "./utils/response.js";
+} from "./handler.js";
+import bodyParser from "./parser.js";
+import responseMethods from "./response.js";
 
 /**
  * Creates and starts the Vibe HTTP server.
@@ -20,7 +20,7 @@ import responseMethods from "./utils/response.js";
  * - Route-level interceptors
  * - Smart handler execution & implicit responses
  *
- * @param {import("./vibe.js").VibeConfig} options
+ * @param {import("../vibe.js").VibeConfig} options
  *        Internal framework configuration (routes, interceptors, settings).
  * @param {number} port
  *        Port number to listen on.

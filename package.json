@@ -1,18 +1,42 @@
 {
-  "name": "vibe",
+  "name": "vibe-framework",
   "version": "1.0.0",
-  "main": "vibe.js",
+  "description": "A lightweight, regex-based Node.js web framework built for speed and simplicity.",
   "type": "module",
+  "main": "vibe.js",
+  "types": "vibe.d.ts",
+  "exports": {
+    ".": {
+      "import": "./vibe.js",
+      "types": "./vibe.d.ts"
+    }
+  },
+  "files": [
+    "vibe.js",
+    "vibe.d.ts",
+    "utils/"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "echo \"No tests yet\"",
     "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "types": "./vibe.d.ts",
-  "description": "",
+  "keywords": [
+    "node",
+    "framework",
+    "http",
+    "router",
+    "middleware",
+    "web",
+    "backend",
+    "regex-router",
+    "express-alternative"
+  ],
+  "author": "Nnamdi \"Joe\" Amaga",
+  "license": "MIT",
   "dependencies": {
     "busboy": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
