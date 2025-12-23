@@ -1,9 +1,10 @@
-
+import os from "os";
+import { color } from "./colors.js";
 
 /**
  * Parses query string from URL into an object.
- * @param {string} url 
- * @returns {Record<string, string>}
+ * @param {string} url
+ * @returns {Object}
  */
 export function extractQuery(url) {
   const query = {};
@@ -19,9 +20,9 @@ export function extractQuery(url) {
 
 /**
  * Extracts raw parameters from URL based on route definition.
- * @param {string} routePath 
- * @param {string} requestPath 
- * @returns {Record<string, string>}
+ * @param {string} routePath
+ * @param {string} requestPath
+ * @returns {Object}
  */
 export function extractParams(routePath, requestPath) {
   const routeSegments = routePath.split("/").filter(Boolean);
@@ -40,8 +41,8 @@ export function extractParams(routePath, requestPath) {
 
 /**
  * Checks if the request URL matches the route Regex.
- * @param {RegExp} pathRegex 
- * @param {string} requestPath 
+ * @param {RegExp} pathRegex
+ * @param {string} requestPath
  * @returns {RegExpExecArray | null}
  */
 export function matchPath(pathRegex, requestPath) {
@@ -106,7 +107,8 @@ export function isSendAble(value) {
  * @returns {Promise<boolean>} - Returns false if response ended, true otherwise
  */
 export async function runIntercept(intercept, req, res, isRoute = true) {
-  if (!intercept || (Array.isArray(intercept) && intercept.length === 0)) return true;
+  if (!intercept || (Array.isArray(intercept) && intercept.length === 0))
+    return true;
 
   const funcs = Array.isArray(intercept) ? intercept : [intercept];
 
@@ -132,9 +134,63 @@ export async function runIntercept(intercept, req, res, isRoute = true) {
  * @param {import("../vibe.js").VibeResponse} res
  */
 export function handleError(error, req, res) {
-    console.error("Error in route handler:", error);
-    if (!res.headersSent) {
-      res.writeHead(500, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "Internal Server Error" }));
+  console.error("Error in route handler:", error);
+  if (!res.headersSent) {
+    res.writeHead(500, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "Internal Server Error" }));
+  }
+}
+
+/**
+ * Finds the local network IP address (IPv4)
+ * @param {string} host
+ * @param {number} port
+ * @returns {void}
+ */
+export function getNetworkIP(host, port) {
+  const interfaces = os.networkInterfaces();
+  const addresses = [];
+
+  for (const name of Object.keys(interfaces)) {
+    addresses.push(
+      ...interfaces[name]
+        .map((iface) =>
+          iface.address === "::1"
+            ? { address: "[::1]", fam: iface.family }
+            : { address: iface.address, fam: iface.family }
+        )
+        .filter((addr) => !addr.address.startsWith("fe80"))
+    );
+  }
+
+  for (const addrs of addresses) {
+    if (host === "0.0.0.0") {
+      // => listens on all ipv4 hosts
+      if (addrs.fam === "IPv4") log(`Server listening at - \x1b[4mhttp://${addrs.address}:${port}`);
     }
+
+    if (host === "::") { // => listens on all ipv6/ipv4 hosts
+      log(`Server listening at - \x1b[4mhttp://${addrs.address}:${port}`);
+    }
+
+    if (addrs.address === host) {
+      log(`Server listening at - \x1b[4mhttp://${addrs.address}:${port}`);
+    }
+  }
+}
+
+/**
+ * Logs a message with a prefix.
+ * @param {string} message
+ */
+export function log(message) {
+  process.stdout.write(`${color.green("[VIBE LOG]:")} ${color.bright(message)}\n`);
+}
+
+/**
+ * Logs an error with a prefix.
+ * @param {string} message
+ */
+export function error(message) {
+  process.stderr.write(`${color.red(`[VIBE ERROR]: ${message}`)}\n`);
 }

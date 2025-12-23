@@ -1,6 +1,7 @@
 import server from "./utils/server.js";
 import { adapt } from "./utils/adapt.js";
 import { PathToRegex } from "./utils/handler.js";
+import { color } from "./utils/colors.js";
 
 /**
  * @typedef {import("http").IncomingMessage} IncomingMessage
@@ -154,7 +155,7 @@ const vibe = () => {
         media: {
           public: true,
           dest: null,
-          maxSize: 10 * 1024 * 1024
+          maxSize: 10 * 1024 * 1024,
         },
       },
     ],
@@ -171,10 +172,10 @@ const vibe = () => {
 
   /**
    * Internal function to register a route
-   * @param {string} method 
-   * @param {string} path 
-   * @param {RouteOptions | Handler} opts 
-   * @param {Handler} [handler] 
+   * @param {string} method
+   * @param {string} path
+   * @param {RouteOptions | Handler} opts
+   * @param {Handler} [handler]
    */
   function registerRoute(method, path, opts, handler) {
     /** @type {VibeRoute} */
@@ -188,12 +189,11 @@ const vibe = () => {
       media: {
         public: true,
         dest: null,
-        maxSize: 10 * 1024 * 1024
+        maxSize: 10 * 1024 * 1024,
       },
     };
 
     if (path === "/") {
-      log("registering the / path");
       // Special handling for overriding default route...
       if (handler !== undefined) {
         if (typeof opts !== "object" || Array.isArray(opts)) {
@@ -201,8 +201,10 @@ const vibe = () => {
         }
         options.routes[0].intercept = opts.intercept;
         options.routes[0].media.dest = opts.media?.dest;
-        options.routes[0].media.public = opts.media?.public === undefined ? true : opts.media.public;
-        options.routes[0].media.maxSize = opts.media?.maxSize || 10 * 1024 * 1024;
+        options.routes[0].media.public =
+          opts.media?.public === undefined ? true : opts.media.public;
+        options.routes[0].media.maxSize =
+          opts.media?.maxSize || 10 * 1024 * 1024;
         options.routes[0].handler = handler;
       } else {
         options.routes[0].handler = opts;
@@ -218,7 +220,8 @@ const vibe = () => {
       }
       route.intercept = opts.intercept;
       route.media.dest = opts.media?.dest;
-      route.media.public = opts.media.public === undefined ? true : opts.media.public;
+      route.media.public =
+        opts.media.public === undefined ? true : opts.media.public;
       route.media.maxSize = opts.media?.maxSize || 10 * 1024 * 1024;
       route.handler = handler;
     } else {
@@ -236,16 +239,36 @@ const vibe = () => {
    * Starts the HTTP server
    * @param {number} port - The port to listen on
    * @param {string} [host] - Optional host (e.g. '0.0.0.0')
+   * @param {() => void} [callback] - Optional callback when server starts
    */
-  function listen(port, host) {
+  function listen(port, host, callback) {
     addStatic();
-    server(options, Number(port), host);
+
+    // check port type
+    if (typeof port === "string" || "number") {
+      if (!isNaN(Number(port))) {
+        port = Number(port);
+      } else {
+        throw new Error("Port must be a number or numeric string");
+      }
+    } else if (port === undefined) {
+      throw new Error("Port number is required to start the server");
+    } else {
+      throw new Error("Port must be a number or numeric string");
+    }
+
+    if (typeof host === "function") {
+      callback = host;
+      host = undefined; // Default host
+    }
+
+    server(options, Number(port), host, callback);
   }
 
   /**
    * Groups routes or includes a sub-router
-   * @param {string | ((router: RouterAPI) => void)} prefixOrFunc 
-   * @param {((router: RouterAPI) => void)} [maybeFunc] 
+   * @param {string | ((router: RouterAPI) => void)} prefixOrFunc
+   * @param {((router: RouterAPI) => void)} [maybeFunc]
    */
   function include(prefixOrFunc, maybeFunc) {
     if (typeof prefixOrFunc === "function") {
@@ -257,7 +280,7 @@ const vibe = () => {
 
   /**
    * Helper to generate a sub-router API with a prefix
-   * @param {string} prefix 
+   * @param {string} prefix
    * @returns {RouterAPI}
    */
   function routeAPI(prefix) {
@@ -278,7 +301,7 @@ const vibe = () => {
 
   /**
    * Registers a global middleware
-   * @param {Interceptor} interceps 
+   * @param {Interceptor} interceps
    */
   function plugin(interceps) {
     options.interceps.push(adapt(interceps));
@@ -288,8 +311,6 @@ const vibe = () => {
     const routes = options.routes.map((route) => route.path);
     console.log(routes);
   }
-
-  const log = (value) => console.log(value);
 
   const setPublicFolder = (foldername) =>
     (options.publicFolder = foldername || "public");
@@ -304,7 +325,11 @@ const vibe = () => {
       handler: (req, res) => {
         try {
           log(req.url);
-          const filePath = req.url.split("/").filter(Boolean).slice(1).join("/");
+          const filePath = req.url
+            .split("/")
+            .filter(Boolean)
+            .slice(1)
+            .join("/");
           res.sendFile(filePath);
         } catch (error) {
           log(error.message);
@@ -316,9 +341,21 @@ const vibe = () => {
       pathRegex,
       paramKeys,
       intercept: null, // Fixed typo in original code
-      media: { public: true, dest: null } // Added missing prop
+      media: { public: true, dest: null }, // Added missing prop
     });
   }
+
+  /**
+   * Logs a message with a prefix.
+   * @param {string} message
+   */
+  const log = (message, colorValue = "reset") => process.stdout.write(`${color[colorValue](message)}\n`);
+
+  /**
+   * Logs an error with a prefix.
+   * @param {string} message
+   */
+  const error = (message, colorValue = "red") => process.stderr.write(`${color[colorValue](message)}\n`);
 
   return {
     get,

@@ -1,6 +1,8 @@
 import http from "http";
 import {
+  error,
   extractQuery,
+  getNetworkIP,
   handleError,
   isSendAble,
   matchPath,
@@ -8,6 +10,7 @@ import {
 } from "./handler.js";
 import bodyParser from "./parser.js";
 import responseMethods from "./response.js";
+import dns from "node:dns/promises";
 
 /**
  * Creates and starts the Vibe HTTP server.
@@ -26,11 +29,13 @@ import responseMethods from "./response.js";
  *        Port number to listen on.
  * @param {string} [host]
  *        Host address (defaults to system localhost).
+ * @param {() => void} [callback]
+ *        Optional callback invoked once the server starts listening.
  * @returns {void}
  */
-function server(options, port, host) {
+async function server(options, port, host, callback) {
 
-  const Server = http.createServer(async (req, res) => {
+  async function reqListener(req, res) {
     req.query = extractQuery(req.url);
     const [pathname] = req.url.split("?");
     req.url = pathname;
@@ -41,7 +46,6 @@ function server(options, port, host) {
     // 2. Run Global Middleware (Plugins)
     const globalOk = await runIntercept(options.interceps, req, res, false);
     if (!globalOk) return;
-
 
     req.ip = req.socket.remoteAddress || req.headers["x-forwarded-for"];
 
@@ -91,10 +95,21 @@ function server(options, port, host) {
     // 404 Fallback
     res.writeHead(404, { "content-type": "text/plain" });
     res.end("Not Found");
+  }
+
+  let mainHost = host || "0.0.0.0";
+  if(mainHost === "localhost") mainHost = "127.0.0.1";
+
+  const vibe_server  = http.createServer(reqListener);
+
+  vibe_server.listen(port, mainHost, async () => {
+    const addrs = await dns.lookup("::", { all: true });
+    getNetworkIP(mainHost, port);
+    if(callback) callback();
   });
 
-  Server.listen(port, host, () => {
-    console.log(`GeNeSix server running at port ${port}`);
+  vibe_server.on("error", (err) => {
+    error(`Port ${port} is already in use! \n${err.message}`);
   });
 }
 

@@ -15,7 +15,7 @@ export interface UploadedFile {
   /** The name of the file as saved on disk (e.g., "image-a7x92b.png") */
   filename: string;
   /** The original name of the uploaded file */
-  originalName: string;
+  originalName?: string;
   /** MIME type of the file (e.g., "image/png") */
   type: string;
   /** Absolute or relative path to the file on disk */
@@ -71,8 +71,6 @@ export interface VibeRequest extends IncomingMessage {
 /**
  * Extended Vibe response object.
  */
-// vibe.d.ts (partial update for VibeResponse)
-
 export interface VibeResponse extends ServerResponse {
   json: (data: any) => void;
   send: (data: string | number | boolean | object) => void;
@@ -99,7 +97,6 @@ export interface VibeResponse extends ServerResponse {
   serverError: (error?: any) => void;
 }
 
-
 // ==========================================
 // Handlers & Interceptors
 // ==========================================
@@ -114,7 +111,20 @@ export type Handler = (
 export type Interceptor = (
   req: VibeRequest,
   res: VibeResponse
-) => void | Promise<void>;
+) => boolean | void | Promise<boolean | void>;
+
+// ==========================================
+// Colors Utility
+// ==========================================
+
+export type ColorName = 
+  | "reset" | "red" | "green" | "yellow" | "blue" | "cyan" | "dim" 
+  | "magenta" | "black" | "gray" | "redBright" | "greenBright" 
+  | "yellowBright" | "blueBright" | "cyanBright" | "whiteBright" 
+  | "magentaBright";
+
+export const color: Record<ColorName, (text: string) => string>;
+
 
 // ==========================================
 // Router & App Interfaces
@@ -139,8 +149,13 @@ export interface RouterAPI {
   del: RouteRegistrar;
   patch: RouteRegistrar;
   head: RouteRegistrar;
-  /** Log helper */
-  log: (value: any) => void;
+  
+  /** * Log helper 
+   * @param value The message to log
+   * @param color Optional color name (e.g. 'green', 'red')
+   */
+  log: (value: any, color?: ColorName) => void;
+  
   /** Register a plugin/middleware */
   plugin: (interceptor: Interceptor) => void;
 }
@@ -154,14 +169,23 @@ export interface VibeApp {
   patch: RouteRegistrar;
   head: RouteRegistrar;
 
-  /** Start the HTTP server */
-  listen: (port: number, host?: string) => void;
+  /** * Start the HTTP server 
+   * @param port Port to listen on
+   * @param host Optional host (e.g. '0.0.0.0' or 'localhost')
+   * @param callback Optional callback when server starts
+   */
+  listen: (port: number | string, host?: string, callback?: () => void) => void;
+  // Overload for when host is skipped
+  listen: (port: number | string, callback?: () => void) => void;
 
   /** Logs all registered routes */
   logRoutes: () => void;
 
-  /** Internal logger */
-  log: (value: any) => void;
+  /** * Internal logger 
+   * @param value The message to log
+   * @param color Optional color name (e.g. 'green', 'red')
+   */
+  log: (value: any, color?: ColorName) => void;
 
   /** Configure folder for static files (default: "public") */
   setPublicFolder: (foldername: string) => void;
