@@ -140,21 +140,34 @@ export async function runIntercept(intercept, req, res, isRoute = true) {
  */
 export function handleError(error, req, res) {
   const isDev = process.env.NODE_ENV !== "production";
+  const message = error.message || "Unknown error";
 
   // Log error (full stack in dev, message only in production)
   if (isDev) {
     console.error("[VIBE ERROR]:", error);
   } else {
-    console.error("[VIBE ERROR]:", error.message || "Unknown error");
+    console.error("[VIBE ERROR]:", message);
   }
 
   if (!res.headersSent) {
-    res.writeHead(500, { "content-type": "application/json" });
+    // Determine status code based on error type
+    let statusCode = 500;
+    let errorType = "Internal Server Error";
+
+    if (message.includes("exceeds max size")) {
+      statusCode = 413;
+      errorType = "Payload Too Large";
+    } else if (message.includes("not allowed")) {
+      statusCode = 415;
+      errorType = "Unsupported Media Type";
+    }
+
+    res.writeHead(statusCode, { "content-type": "application/json" });
 
     // Only expose error details in development
     const responseBody = isDev
-      ? { error: "Internal Server Error", message: error.message }
-      : { error: "Internal Server Error" };
+      ? { error: errorType, message }
+      : { error: errorType };
 
     res.end(JSON.stringify(responseBody));
   }

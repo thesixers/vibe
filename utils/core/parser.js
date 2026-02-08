@@ -161,6 +161,9 @@ function parseMultipart(req, res, media, options, resolve, reject) {
       );
       file.unpipe(writeStream);
       writeStream.end();
+      // IMPORTANT: Resume the file stream to drain remaining data
+      // This allows busboy to finish parsing the multipart request
+      file.resume();
       // Clean up partial file
       fs.unlink(filePath, () => {
         pendingWrites--;
