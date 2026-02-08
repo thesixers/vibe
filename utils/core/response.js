@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { mimeTypes } from "../helpers/mime.js";
+import { stringify as nativeStringify, isNativeEnabled } from "../native.js";
 
 // Pre-computed headers for performance
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -21,21 +22,23 @@ const RESPONSES = {
 };
 
 /**
- * Fast JSON stringify - handles common cases inline
+ * Fast JSON stringify - uses native C++ when available
  * @param {any} data
  * @returns {string}
  */
 function fastStringify(data) {
-  // Fast path for null/undefined
+  // Use native C++ stringify if available
+  if (isNativeEnabled()) {
+    return nativeStringify(data);
+  }
+
+  // JavaScript fallback
   if (data == null) return "null";
 
   const type = typeof data;
-
-  // Fast path for primitives
   if (type === "string") return JSON.stringify(data);
   if (type === "number" || type === "boolean") return String(data);
 
-  // Arrays and objects use native stringify (V8 optimized)
   return JSON.stringify(data);
 }
 
