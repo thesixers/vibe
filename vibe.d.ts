@@ -36,6 +36,8 @@ export interface MediaOptions {
   maxSize?: number;
   /** Allowed MIME types (e.g., ["image/png", "image/jpeg"]) */
   allowedTypes?: string[];
+  /** Enable streaming mode for large files. Use req.on('file', ...) */
+  streaming?: boolean;
 }
 
 /**
@@ -89,7 +91,13 @@ export interface VibeResponse extends ServerResponse {
   json: (data: any) => void;
   send: (data: string | number | boolean | object) => void;
   status: (code: number) => VibeResponse;
+  /** Send a file from the public folder */
   sendFile: (filePath: string) => void;
+  /** Send any file by absolute path */
+  sendAbsoluteFile: (
+    absolutePath: string,
+    opts?: { download?: boolean; filename?: string },
+  ) => void;
   sendHtml: (filename: string) => void;
   redirect: (url: string, code?: number) => void;
 

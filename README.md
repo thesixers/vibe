@@ -120,9 +120,40 @@ app.get("/users", async (req, res) => {
 });
 ```
 
-### Streaming Uploads
+### File Uploads
+
+Vibe supports multipart file uploads with built-in validation.
+
+#### Basic File Upload
 
 ```javascript
+app.post("/upload", { media: { dest: "uploads" } }, (req, res) => {
+  return { files: req.files, body: req.body };
+});
+```
+
+#### Media Options
+
+```javascript
+app.post(
+  "/upload",
+  {
+    media: {
+      dest: "uploads", // Folder to save files
+      public: true, // Save inside public folder (default: true)
+      maxSize: 5 * 1024 * 1024, // Max file size: 5MB
+      allowedTypes: ["image/jpeg", "image/png", "application/pdf"],
+    },
+  },
+  handler,
+);
+```
+
+#### Streaming Uploads (Large Files)
+
+```javascript
+import fs from "fs";
+
 app.post("/upload", { media: { streaming: true } }, (req, res) => {
   req.on("file", (name, stream, info) => {
     stream.pipe(fs.createWriteStream(`/uploads/${info.filename}`));
@@ -131,7 +162,84 @@ app.post("/upload", { media: { streaming: true } }, (req, res) => {
 });
 ```
 
+#### Uploaded File Object
+
+```javascript
+// req.files contains:
+[
+  {
+    filename: "image-a7x92b.png", // Saved filename
+    originalName: "photo.png", // Original filename
+    type: "image/png", // MIME type
+    filePath: "/uploads/image.png", // Full path
+    size: 102400, // Size in bytes
+  },
+];
+```
+
 ---
+
+### Interceptors (Middleware)
+
+Interceptors run before your handler. Return `false` to stop execution.
+
+#### Single Interceptor
+
+```javascript
+const authCheck = (req, res) => {
+  if (!req.headers.authorization) {
+    res.unauthorized("Token required");
+    return false;
+  }
+  req.user = { id: 1 };
+  return true;
+};
+
+app.get("/protected", { intercept: authCheck }, (req) => {
+  return { user: req.user };
+});
+```
+
+#### Multiple Interceptors
+
+```javascript
+app.get(
+  "/admin",
+  {
+    intercept: [authCheck, adminCheck, rateLimiter],
+  },
+  handler,
+);
+```
+
+#### Global Interceptors
+
+```javascript
+// Applies to ALL routes
+app.plugin((req, res) => {
+  console.log(`${req.method} ${req.url}`);
+});
+```
+
+---
+
+### Route Options
+
+```javascript
+app.post(
+  "/path",
+  {
+    intercept: authMiddleware, // Middleware function(s)
+    media: {
+      // File upload config
+      dest: "uploads",
+      maxSize: 10 * 1024 * 1024,
+      allowedTypes: ["image/*"],
+    },
+  },
+  handler,
+);
+```
 
 ## 🛠️ API Reference
 
