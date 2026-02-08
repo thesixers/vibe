@@ -52,9 +52,5 @@
   "engines": {
     "node": ">=18"
   },
-  "devDependencies": {
-    "express": "^5.2.1",
-    "fastify": "^5.7.4"
-  },
   "gypfile": true
 }
