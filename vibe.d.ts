@@ -26,15 +26,26 @@ export interface UploadedFile {
 
 /**
  * Configuration for file uploads on a specific route.
+ *
+ * @example
+ * {
+ *   dest: "uploads",
+ *   maxSize: 5 * 1024 * 1024,  // 5MB
+ *   allowedTypes: ["image/jpeg", "image/png"],
+ *   public: true
+ * }
  */
 export interface MediaOptions {
   /** Save file inside the configured public folder. Default: true */
   public?: boolean;
   /** Subfolder destination for uploads (e.g., "uploads/avatars") */
   dest?: string;
-  /** Maximum allowed file size in bytes. Default: 10 MB */
+  /** Maximum allowed file size in bytes. Default: 10 MB (10485760) */
   maxSize?: number;
-  /** Allowed MIME types (e.g., ["image/png", "image/jpeg"]) */
+  /**
+   * Allowed MIME types. Supports wildcards like "image/*"
+   * @example ["image/jpeg", "image/png", "application/pdf"]
+   */
   allowedTypes?: string[];
   /** Enable streaming mode for large files. Use req.on('file', ...) */
   streaming?: boolean;
@@ -42,11 +53,40 @@ export interface MediaOptions {
 
 /**
  * Options for registering a route.
+ *
+ * @example
+ * // With interceptor only
+ * { intercept: authMiddleware }
+ *
+ * @example
+ * // With file upload
+ * {
+ *   intercept: authMiddleware,
+ *   media: {
+ *     dest: "uploads",
+ *     maxSize: 10 * 1024 * 1024,
+ *     allowedTypes: ["image/*"]
+ *   }
+ * }
  */
 export interface RouteOptions {
-  /** Middleware(s) to run before the main handler */
+  /**
+   * Middleware function(s) to run before the handler.
+   * Return false to stop execution.
+   * @example
+   * intercept: (req, res) => {
+   *   if (!req.headers.authorization) {
+   *     res.unauthorized();
+   *     return false;
+   *   }
+   *   return true;
+   * }
+   */
   intercept?: Interceptor | Interceptor[];
-  /** Configuration for file uploads */
+  /**
+   * Configuration for file uploads (multipart/form-data).
+   * Files will be available in req.files array.
+   */
   media?: MediaOptions;
 }
 
@@ -175,13 +215,45 @@ export const color: Record<ColorName, (text: string) => string>;
 
 /**
  * Route registration function.
- * Supports two signatures:
- * 1. (path, handler)
- * 2. (path, options, handler)
+ *
+ * @example
+ * // Simple handler
+ * app.get("/path", (req, res) => { ... });
+ *
+ * @example
+ * // Static response
+ * app.get("/", "Hello World");
+ *
+ * @example
+ * // With options (interceptor + file upload)
+ * app.post("/upload", {
+ *   intercept: authMiddleware,
+ *   media: {
+ *     dest: "uploads",
+ *     maxSize: 10 * 1024 * 1024,
+ *     allowedTypes: ["image/*"]
+ *   }
+ * }, handler);
  */
 export interface RouteRegistrar {
+  /**
+   * Register a route with a handler or static response.
+   * @param path - Route path (e.g., "/users/:id")
+   * @param handler - Handler function, string, number, or object
+   */
   (path: string, handler: Handler | string | number | object): void;
-  (path: string, options: RouteOptions, handler: Handler): void;
+
+  /**
+   * Register a route with options and handler.
+   * @param path - Route path (e.g., "/upload")
+   * @param options - Route options (intercept, media)
+   * @param handler - Handler function
+   */
+  (
+    path: string,
+    options: RouteOptions,
+    handler: Handler | string | number | object,
+  ): void;
 }
 
 /** Sub-router or prefixed router instance */
