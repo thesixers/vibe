@@ -54,6 +54,32 @@ function parseMultipart(req, res, media, options, resolve, reject) {
   let bb;
   let fileError = null;
   const streaming = media.streaming === true;
+  let pendingWrites = 0;
+  let busboyFinished = false;
+  let alreadyRejected = false;
+
+  // Helper to reject immediately (for errors that shouldn't wait)
+  const rejectNow = (err) => {
+    if (alreadyRejected) return;
+    alreadyRejected = true;
+    // Unpipe to stop processing more data
+    req.unpipe(bb);
+    // Drain the request to prevent hanging
+    req.resume();
+    reject(err);
+  };
+
+  // Helper to check if we're done (for normal completion)
+  const checkComplete = () => {
+    if (alreadyRejected) return;
+    if (busboyFinished && pendingWrites === 0) {
+      if (fileError) {
+        reject(fileError);
+      } else {
+        resolve();
+      }
+    }
+  };
 
   try {
     bb = busboy({
@@ -75,13 +101,21 @@ function parseMultipart(req, res, media, options, resolve, reject) {
     const { filename, mimeType } = info;
     if (!filename) return file.resume();
 
-    // File type validation
+    // File type validation - support wildcards like "image/*"
     if (media.allowedTypes && Array.isArray(media.allowedTypes)) {
-      if (!media.allowedTypes.includes(mimeType)) {
-        fileError = new Error(
-          `File type '${mimeType}' not allowed. Allowed: ${media.allowedTypes.join(", ")}`,
+      const isAllowed = media.allowedTypes.some((allowed) => {
+        if (allowed.endsWith("/*")) {
+          return mimeType.startsWith(allowed.slice(0, -1));
+        }
+        return allowed === mimeType;
+      });
+      if (!isAllowed) {
+        file.resume();
+        return rejectNow(
+          new Error(
+            `File type '${mimeType}' not allowed. Allowed: ${media.allowedTypes.join(", ")}`,
+          ),
         );
-        return file.resume();
       }
     }
 
@@ -92,6 +126,8 @@ function parseMultipart(req, res, media, options, resolve, reject) {
     }
 
     // BUFFERING MODE: Write to disk
+    pendingWrites++;
+
     const parent = media.public ? options.publicFolder || "" : "";
     const dest = path.resolve(
       path.join(parent, media.dest || (media.public ? "uploads" : "private")),
@@ -103,6 +139,8 @@ function parseMultipart(req, res, media, options, resolve, reject) {
       !dest.startsWith(path.resolve(options.publicFolder || ""))
     ) {
       console.warn("Attempted upload outside public folder, skipping");
+      pendingWrites--;
+      checkComplete();
       return file.resume();
     }
 
@@ -110,6 +148,8 @@ function parseMultipart(req, res, media, options, resolve, reject) {
       if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
     } catch (err) {
       console.error("Failed to create upload folder:", err);
+      pendingWrites--;
+      checkComplete();
       return file.resume();
     }
 
@@ -131,23 +171,32 @@ function parseMultipart(req, res, media, options, resolve, reject) {
     // Handle file size limit exceeded
     file.on("limit", () => {
       truncated = true;
-      fileError = new Error(
+      const err = new Error(
         `File '${filename}' exceeds max size of ${media.maxSize || 10 * 1024 * 1024} bytes`,
       );
       file.unpipe(writeStream);
       writeStream.end();
-      // Clean up partial file
-      fs.unlink(filePath, () => {});
+      file.resume();
+      // Clean up partial file and reject immediately
+      fs.unlink(filePath, () => {
+        pendingWrites--;
+      });
+      // Reject NOW - don't wait for busboy to finish
+      rejectNow(err);
     });
 
     file.on("error", (err) => {
       console.error("File stream error:", err);
       writeStream.end();
+      pendingWrites--;
+      checkComplete();
     });
 
     writeStream.on("error", (err) => {
       console.error("Write stream error:", err);
       file.resume();
+      pendingWrites--;
+      checkComplete();
     });
 
     writeStream.on("finish", () => {
@@ -160,6 +209,8 @@ function parseMultipart(req, res, media, options, resolve, reject) {
           size,
         });
       }
+      pendingWrites--;
+      checkComplete();
     });
 
     file.pipe(writeStream);
@@ -172,11 +223,8 @@ function parseMultipart(req, res, media, options, resolve, reject) {
   });
 
   bb.on("finish", () => {
-    if (fileError) {
-      reject(fileError);
-    } else {
-      resolve();
-    }
+    busboyFinished = true;
+    checkComplete();
   });
 
   req.pipe(bb);
