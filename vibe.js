@@ -134,10 +134,14 @@ const vibe = () => {
   // Threshold for switching between linear and trie matching
   const TRIE_THRESHOLD = 50;
 
+  // Static routes Map for O(1) lookup (routes without params)
+  const staticRoutes = new Map();
+
   // Internal configuration
   const options = {
     trie,
     routes,
+    staticRoutes,
     routeCount: 0,
     trieThreshold: TRIE_THRESHOLD,
     publicFolder: "public",
@@ -214,7 +218,9 @@ const vibe = () => {
         route.handler = opts;
       }
       route.pathRegex = /^\/$/;
+      route.isStatic = true;
       trie.insert(method, "/", route);
+      staticRoutes.set(method + "/", route);
       // Update existing root route in routes array
       const rootIdx = routes.findIndex(
         (r) => r.path === "/" && r.method === method,
@@ -240,6 +246,15 @@ const vibe = () => {
 
     // Generate regex for linear matching
     route.pathRegex = pathToRegex(fullPath);
+
+    // Check if route is static (no params)
+    const isStatic = !fullPath.includes(":") && !fullPath.includes("*");
+    route.isStatic = isStatic;
+
+    // Add to static routes Map for O(1) lookup
+    if (isStatic) {
+      staticRoutes.set(method + fullPath, route);
+    }
 
     // Add to both structures
     trie.insert(method, fullPath, route);
@@ -281,6 +296,11 @@ const vibe = () => {
       }
     } else {
       throw new Error("Port must be a number or numeric string");
+    }
+
+    // Validate port range
+    if (port < 1 || port > 65535) {
+      throw new Error("Port must be between 1 and 65535");
     }
 
     if (typeof host === "function") {

@@ -1,146 +1,193 @@
 import http from "http";
 import {
   error,
-  extractQuery,
   getNetworkIP,
   handleError,
   isSendAble,
   matchPath,
-  runIntercept,
 } from "./handler.js";
 import bodyParser from "./parser.js";
 import responseMethods from "./response.js";
 import dns from "node:dns/promises";
 
+// Pre-allocated 404 response
+const NOT_FOUND_BODY = "Not Found";
+
 /**
  * Creates and starts the Vibe HTTP server.
- *
- * Handles the full request lifecycle:
- * - Request normalization (URL, query, IP)
- * - Global interceptors
- * - Body parsing (JSON & multipart)
- * - Route matching (hybrid: linear for small, trie for large route sets)
- * - Route-level interceptors
- * - Smart handler execution & implicit responses
- *
- * @param {Object} options - Internal framework configuration
- * @param {import("./trie.js").RouteTrie} options.trie - Route trie for matching
- * @param {Array} options.routes - Routes array for linear matching
- * @param {number} options.routeCount - Number of registered routes
- * @param {number} options.trieThreshold - Threshold to switch to trie matching
- * @param {Array} options.interceptors - Global interceptors
- * @param {string} options.publicFolder - Public folder path
- * @param {Object} options.decorators - App-level decorators
- * @param {number} port - Port number to listen on
- * @param {string} [host] - Host address (defaults to 0.0.0.0)
- * @param {Function} [callback] - Optional callback when server starts
- * @returns {void}
+ * HEAVILY OPTIMIZED for performance
  */
 async function server(options, port, host, callback) {
-  // Determine which matching strategy to use based on route count
-  const useTrieMatching = () => options.routeCount > options.trieThreshold;
+  // Pre-compute everything we can
+  const useTrieMatching = options.routeCount > options.trieThreshold;
+  const staticRoutes = options.staticRoutes || new Map();
+  const interceptors = options.interceptors;
+  const hasInterceptors = interceptors && interceptors.length > 0;
+  const requestDecorators = options.requestDecorators;
+  const replyDecorators = options.replyDecorators;
+  const hasRequestDecorators =
+    requestDecorators && Object.keys(requestDecorators).length > 0;
+  const hasReplyDecorators =
+    replyDecorators && Object.keys(replyDecorators).length > 0;
+  const trie = options.trie;
+  const routes = options.routes;
 
-  async function reqListener(req, res) {
-    req.query = extractQuery(req.url);
-    const [pathname] = req.url.split("?");
-    req.url = pathname;
+  // Pre-compute decorator entries
+  const requestDecoratorEntries = hasRequestDecorators
+    ? Object.entries(requestDecorators)
+    : null;
+  const replyDecoratorEntries = hasReplyDecorators
+    ? Object.entries(replyDecorators)
+    : null;
 
-    // 1. Extend Response Object
-    responseMethods(res, options);
+  // Inline interceptor runner (avoid function call overhead)
+  async function runIntercept(intercept, req, res) {
+    if (!intercept) return true;
 
-    // 2. Apply request decorators
-    if (options.requestDecorators) {
-      for (const [name, value] of Object.entries(options.requestDecorators)) {
-        req[name] = typeof value === "function" ? value() : value;
+    if (Array.isArray(intercept)) {
+      for (let i = 0; i < intercept.length; i++) {
+        await intercept[i](req, res);
+        if (res.writableEnded) return false;
       }
-    }
-
-    // 3. Apply response decorators
-    if (options.replyDecorators) {
-      for (const [name, value] of Object.entries(options.replyDecorators)) {
-        res[name] = typeof value === "function" ? value() : value;
-      }
-    }
-
-    // 4. Run Global Middleware (Plugins)
-    const globalOk = await runIntercept(options.interceptors, req, res, false);
-    if (!globalOk) return;
-
-    req.ip = req.socket.remoteAddress || req.headers["x-forwarded-for"];
-
-    // 5. Route Matching - HYBRID APPROACH
-    let match = null;
-
-    if (useTrieMatching()) {
-      // Use Trie for large route sets (O(log n))
-      match = options.trie.match(req.method, req.url);
     } else {
-      // Use Linear for small route sets (lower overhead)
-      match = linearMatch(options.routes, req.method, req.url);
+      await intercept(req, res);
+      if (res.writableEnded) return false;
     }
-
-    if (match) {
-      const { route, params } = match;
-      const { handler, intercept, media } = route;
-
-      try {
-        // Parse Body (JSON or Multipart)
-        await bodyParser(req, res, media, options);
-
-        req.params = params;
-
-        // 6. Run Route-Specific Middleware
-        const beforeOk = await runIntercept(intercept, req, res);
-        if (!beforeOk) return;
-
-        // 7. Execute Main Handler
-        if (typeof handler === "function") {
-          const returnedValue = await handler(req, res);
-
-          // Handle implicit returns (e.g. return { msg: 'hi' })
-          if (returnedValue !== undefined) {
-            if (!res.writableEnded) res.json(returnedValue);
-          }
-        } else if (isSendAble(handler)) {
-          res.send(handler);
-        } else {
-          throw new Error(
-            "Handler must be a function, string, number, or object",
-          );
-        }
-
-        return;
-      } catch (err) {
-        handleError(err, req, res);
-        return;
-      }
-    }
-
-    // 404 Fallback
-    res.writeHead(404, { "content-type": "text/plain" });
-    res.end("Not Found");
+    return true;
   }
 
-  /**
-   * Linear route matching for small route sets
-   * @param {Array} routes
-   * @param {string} method
-   * @param {string} url
-   * @returns {{ route: Object, params: Object } | null}
-   */
-  function linearMatch(routes, method, url) {
-    for (const route of routes) {
+  // Linear route matching (inlined for speed)
+  function linearMatch(method, url) {
+    for (let i = 0, len = routes.length; i < len; i++) {
+      const route = routes[i];
       if (route.method !== method) continue;
-
-      const result = matchPath(route.pathRegex, url);
+      const result = route.pathRegex.exec(url);
       if (result) {
-        return {
-          route,
-          params: result.groups ? { ...result.groups } : {},
-        };
+        return { route, params: result.groups || {} };
       }
     }
     return null;
+  }
+
+  // Main request handler - OPTIMIZED
+  function reqListener(req, res) {
+    // Fast pathname extraction
+    const url = req.url;
+    const qIdx = url.indexOf("?");
+    const pathname = qIdx < 0 ? url : url.slice(0, qIdx);
+
+    // Lazy query (getter) with proper URL decoding
+    let _query;
+    req.__defineGetter__("query", function () {
+      if (_query === undefined) {
+        if (qIdx < 0) {
+          _query = {};
+        } else {
+          _query = {};
+          const qs = url.slice(qIdx + 1);
+          const pairs = qs.split("&");
+          for (let i = 0; i < pairs.length; i++) {
+            const eq = pairs[i].indexOf("=");
+            if (eq > 0) {
+              try {
+                const key = decodeURIComponent(pairs[i].slice(0, eq));
+                const value = decodeURIComponent(pairs[i].slice(eq + 1));
+                _query[key] = value;
+              } catch {
+                // Invalid encoding, use raw value
+                _query[pairs[i].slice(0, eq)] = pairs[i].slice(eq + 1);
+              }
+            }
+          }
+        }
+      }
+      return _query;
+    });
+
+    req.url = pathname;
+
+    // Extend response
+    responseMethods(res, options);
+
+    // Apply decorators (only if exist)
+    if (requestDecoratorEntries) {
+      for (let i = 0; i < requestDecoratorEntries.length; i++) {
+        const e = requestDecoratorEntries[i];
+        req[e[0]] = typeof e[1] === "function" ? e[1]() : e[1];
+      }
+    }
+    if (replyDecoratorEntries) {
+      for (let i = 0; i < replyDecoratorEntries.length; i++) {
+        const e = replyDecoratorEntries[i];
+        res[e[0]] = typeof e[1] === "function" ? e[1]() : e[1];
+      }
+    }
+
+    // Main async handler
+    handleRequest(req, res, pathname);
+  }
+
+  async function handleRequest(req, res, pathname) {
+    // Global interceptors
+    if (hasInterceptors) {
+      if (!(await runIntercept(interceptors, req, res))) return;
+    }
+
+    // Lazy IP
+    if (!req.ip) {
+      req.ip = req.socket.remoteAddress || req.headers["x-forwarded-for"];
+    }
+
+    // Route matching - FAST PATH first
+    const routeKey = req.method + pathname;
+    let match = staticRoutes.get(routeKey);
+
+    if (match) {
+      // Static route found - O(1)
+      match = { route: match, params: {} };
+    } else if (useTrieMatching) {
+      match = trie.match(req.method, pathname);
+    } else {
+      match = linearMatch(req.method, pathname);
+    }
+
+    if (!match) {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end(NOT_FOUND_BODY);
+      return;
+    }
+
+    const { route, params } = match;
+    const { handler, intercept, media } = route;
+
+    try {
+      // Body parsing (only for non-GET with body)
+      const method = req.method;
+      if (media || (method !== "GET" && method !== "HEAD")) {
+        await bodyParser(req, res, media, options);
+      }
+
+      req.params = params;
+
+      // Route interceptors
+      if (intercept) {
+        if (!(await runIntercept(intercept, req, res))) return;
+      }
+
+      // Execute handler
+      if (typeof handler === "function") {
+        const result = await handler(req, res);
+        if (result !== undefined && !res.writableEnded) {
+          res.json(result);
+        }
+      } else if (isSendAble(handler)) {
+        res.send(handler);
+      } else {
+        throw new Error("Invalid handler type");
+      }
+    } catch (err) {
+      handleError(err, req, res);
+    }
   }
 
   let mainHost = host || "0.0.0.0";
@@ -151,15 +198,12 @@ async function server(options, port, host, callback) {
   vibe_server.listen(port, mainHost, async () => {
     try {
       await dns.lookup("::", { all: true });
-    } catch {
-      // IPv6 not available, ignore
-    }
+    } catch {}
     getNetworkIP(mainHost, port);
 
-    // Log which matching strategy is being used
-    const strategy = useTrieMatching() ? "Trie (O(log n))" : "Linear (O(n))";
+    const strategy = useTrieMatching ? "Trie (O(log n))" : "Linear (O(n))";
     console.log(
-      `[VIBE] Route matching: ${strategy} (${options.routeCount} routes, threshold: ${options.trieThreshold})`,
+      `[VIBE] Route matching: ${strategy} (${options.routeCount} routes, ${staticRoutes.size} static, threshold: ${options.trieThreshold})`,
     );
 
     if (callback) callback();

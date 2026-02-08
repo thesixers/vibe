@@ -133,15 +133,30 @@ export async function runIntercept(intercept, req, res, isRoute = true) {
 
 /**
  * Centralized error handler for routes.
+ * In production, only logs error message (not full stack).
  * @param {Error} error
- * @param {import("../vibe.js").VibeRequest} req
- * @param {import("../vibe.js").VibeResponse} res
+ * @param {import("../../vibe.js").VibeRequest} req
+ * @param {import("../../vibe.js").VibeResponse} res
  */
 export function handleError(error, req, res) {
-  console.error("Error in route handler:", error);
+  const isDev = process.env.NODE_ENV !== "production";
+
+  // Log error (full stack in dev, message only in production)
+  if (isDev) {
+    console.error("[VIBE ERROR]:", error);
+  } else {
+    console.error("[VIBE ERROR]:", error.message || "Unknown error");
+  }
+
   if (!res.headersSent) {
     res.writeHead(500, { "content-type": "application/json" });
-    res.end(JSON.stringify({ error: "Internal Server Error" }));
+
+    // Only expose error details in development
+    const responseBody = isDev
+      ? { error: "Internal Server Error", message: error.message }
+      : { error: "Internal Server Error" };
+
+    res.end(JSON.stringify(responseBody));
   }
 }
 
