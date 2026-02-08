@@ -1,6 +1,6 @@
 {
   "name": "vibe-gx",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "A lightweight, regex-based Node.js web framework built for speed and simplicity.",
   "type": "module",
   "main": "vibe.js",
