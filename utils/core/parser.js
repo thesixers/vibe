@@ -56,9 +56,22 @@ function parseMultipart(req, res, media, options, resolve, reject) {
   const streaming = media.streaming === true;
   let pendingWrites = 0;
   let busboyFinished = false;
+  let alreadyRejected = false;
 
-  // Helper to check if we're done
+  // Helper to reject immediately (for errors that shouldn't wait)
+  const rejectNow = (err) => {
+    if (alreadyRejected) return;
+    alreadyRejected = true;
+    // Unpipe to stop processing more data
+    req.unpipe(bb);
+    // Drain the request to prevent hanging
+    req.resume();
+    reject(err);
+  };
+
+  // Helper to check if we're done (for normal completion)
   const checkComplete = () => {
+    if (alreadyRejected) return;
     if (busboyFinished && pendingWrites === 0) {
       if (fileError) {
         reject(fileError);
@@ -97,10 +110,12 @@ function parseMultipart(req, res, media, options, resolve, reject) {
         return allowed === mimeType;
       });
       if (!isAllowed) {
-        fileError = new Error(
-          `File type '${mimeType}' not allowed. Allowed: ${media.allowedTypes.join(", ")}`,
+        file.resume();
+        return rejectNow(
+          new Error(
+            `File type '${mimeType}' not allowed. Allowed: ${media.allowedTypes.join(", ")}`,
+          ),
         );
-        return file.resume();
       }
     }
 
@@ -156,19 +171,18 @@ function parseMultipart(req, res, media, options, resolve, reject) {
     // Handle file size limit exceeded
     file.on("limit", () => {
       truncated = true;
-      fileError = new Error(
+      const err = new Error(
         `File '${filename}' exceeds max size of ${media.maxSize || 10 * 1024 * 1024} bytes`,
       );
       file.unpipe(writeStream);
       writeStream.end();
-      // IMPORTANT: Resume the file stream to drain remaining data
-      // This allows busboy to finish parsing the multipart request
       file.resume();
-      // Clean up partial file
+      // Clean up partial file and reject immediately
       fs.unlink(filePath, () => {
         pendingWrites--;
-        checkComplete();
       });
+      // Reject NOW - don't wait for busboy to finish
+      rejectNow(err);
     });
 
     file.on("error", (err) => {
