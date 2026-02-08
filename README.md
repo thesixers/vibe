@@ -2,172 +2,169 @@
   <img src="./assets/vlogo.png" alt="Vibe Logo" width="180" />
   <h1>Vibe</h1>
   <p>
-    <b>A lightweight, regex-based Node.js web framework built for speed and simplicity.</b>
+    <b>A lightweight, high-performance Node.js web framework built for speed and scalability.</b>
   </p>
 </div>
 
 ---
 
-Vibe (part of the **GeNeSix** ecosystem) is a zero-dependency* web framework designed to give developers full control over the HTTP lifecycle. It features a custom regex router, built-in body parsing, dual-stack networking, and a robust middleware system—all without the bloat.
+Vibe (part of the **GeNeSix** ecosystem) is a zero-dependency\* web framework with **Radix Trie routing**, **cluster mode**, **response caching**, and a **Fastify-style plugin system**.
 
-> **Dependency Note:** The only dependency is `busboy` for high-performance multipart file parsing.
+> **Dependency Note:** The only dependency is `busboy` for multipart file parsing.
 
 ## ⚡ Features
 
-- **🚀 Zero-Bloat Routing:** Custom Regex-based routing engine supporting dynamic parameters.
-- **✨ Smart Returns:** Return strings or objects directly from handlers—no need to call `res.send()`.
-- **🌐 Dual-Stack Networking:** Automatic IPv4 (`127.0.0.1`) and IPv6 (`::1`) support on localhost.
-- **🎨 Professional Logging:** Built-in JSON logger with color support and precise request timing.
-- **📂 Built-in Body Parser:** Native support for JSON & File Uploads.
-- **🛡️ Interceptor System:** Powerful Global and Route-specific middleware.
+| Feature                  | Description                                   |
+| :----------------------- | :-------------------------------------------- |
+| 🚀 **Radix Trie Router** | O(log n) route matching with hybrid mode      |
+| 🔌 **Plugin System**     | Fastify-style `register()` with encapsulation |
+| 🎨 **Decorators**        | Extend app, request, and response             |
+| ⚡ **Cluster Mode**      | Multi-process scaling                         |
+| 💾 **Response Caching**  | LRU cache with ETag support                   |
+| 🔗 **Connection Pool**   | Generic pool for database connections         |
+| 📂 **Streaming**         | Stream large files without buffering          |
 
 ## 🚀 Quick Start
-
-Create a file named `app.js`:
 
 ```javascript
 import vibe from "./vibe.js";
 
 const app = vibe();
 
-// 1. Minimal "One-Liner" Route
-app.get("/hello", "Hello World!");
+app.get("/", "Hello Vibe!");
+app.get("/users/:id", (req, res) => ({ userId: req.params.id }));
 
-// 2. Smart Object Return
-app.post("/data", async (req, res) => {
-  return { status: "success", received: req.body };
-});
-
-// 3. Start Server
-// Vibe automatically logs the correct URLs (Local & Network)
-app.listen(3000); 
+app.listen(3000);
 ```
 
-**Output:**
-```text
-Server listening locally:
-  - IPv4:    http://127.0.0.1:3000
-  - IPv6:    http://[::1]:3000
-```
+## 📖 Core API
 
-## 📖 Documentation
-
-### 1. Minimalist Routing (The "Vibe" Way)
+### Routes
 
 ```javascript
-app.get("/status", "System is Online");
-app.get("/version", { version: "1.0.0" });
+app.get("/path", handler);
+app.post("/path", { intercept: authMiddleware }, handler);
+app.del("/path", handler); // DELETE
 ```
 
-### 2. Standard Routing
+### Plugins (Fastify-style)
 
 ```javascript
-app.get("/not-found", (req, res) => {
-  res.status(404).send("This page does not exist");
-});
-```
-
-### 3. File Uploads
-Pass a configuration object as the second argument to handle files.
-
-```javascript
-app.post(
-  "/upload",
-  { media: { public: true, dest: "uploads", maxSize: 5 * 1024 * 1024 } },
-  (req, res) => {
-    // req.files is an array of uploaded files
-    return { 
-      message: "File uploaded successfully!", 
-      count: req.files.length 
-    };
-  }
+app.register(
+  async (app) => {
+    app.get("/status", { status: "ok" });
+  },
+  { prefix: "/api" },
 );
 ```
 
-### 4. Global Middleware (Plugins)
-
-Global middleware runs on **all routes**.
+### Decorators
 
 ```javascript
-app.plugin((req, res) => {
-  app.log(`[${req.method}] ${req.url}`, "cyan");
+app.decorate("config", { env: "prod" });
+app.decorateRequest("user", null);
+app.decorateReply("sendSuccess", function (d) {
+  this.success(d);
 });
 ```
 
-### 5. Route-Specific Middleware (Interceptors)
+---
 
-Use `adapt()` if you want to wrap third-party logic or restrict access to specific routes:
+## 🔥 Scalability Features
+
+### Cluster Mode
 
 ```javascript
-import { adapt } from "./utils/adapt.js";
+import vibe, { clusterize } from "./vibe.js";
 
-const authGuard = adapt((req, res) => {
-  if (!req.headers.authorization) {
-    res.unauthorized("Missing Token");
-    return false; // Stop execution
-  }
-});
-
-app.get(
-  "/private",
-  { intercept: authGuard },
-  (req, res) => {
-    return { data: "Secret Data" };
-  }
+clusterize(
+  () => {
+    const app = vibe();
+    app.get("/", "Hello from worker!");
+    app.listen(3000);
+  },
+  { workers: 4, restart: true },
 );
 ```
+
+### Response Caching
+
+```javascript
+import vibe, { LRUCache, cacheMiddleware } from "./vibe.js";
+
+const app = vibe();
+const cache = new LRUCache({ max: 1000, ttl: 60000 });
+
+app.get("/data", { intercept: cacheMiddleware(cache) }, () => {
+  return { expensive: "computation" };
+});
+```
+
+### Connection Pool
+
+```javascript
+import vibe, { createPool } from "./vibe.js";
+
+const dbPool = createPool({
+  create: async () => new DBConnection(),
+  destroy: async (conn) => conn.close(),
+  max: 10,
+});
+
+app.decorate("db", dbPool);
+
+app.get("/users", async (req, res) => {
+  return await app.decorators.db.use(async (conn) => {
+    return conn.query("SELECT * FROM users");
+  });
+});
+```
+
+### Streaming Uploads
+
+```javascript
+app.post("/upload", { media: { streaming: true } }, (req, res) => {
+  req.on("file", (name, stream, info) => {
+    stream.pipe(fs.createWriteStream(`/uploads/${info.filename}`));
+  });
+  return { status: "uploading" };
+});
+```
+
+---
 
 ## 🛠️ API Reference
 
-### Application (`app`)
+### Application
 
-| Method | Description |
-| :--- | :--- |
-| `app.listen(port, [host])` | Starts the server. Defaults to `0.0.0.0` (Prod) or Smart Localhost (Dev). |
-| `app.log(msg, [color])` | Logs a message to stdout with optional color. |
-| `app.plugin(fn)` | Registers a global interceptor. |
-| `app.include(fn)` | Mounts a sub-router. |
+| Method                    | Description       |
+| :------------------------ | :---------------- |
+| `app.listen(port)`        | Start server      |
+| `app.register(fn, opts)`  | Register plugin   |
+| `app.decorate(name, val)` | Add app property  |
+| `app.plugin(fn)`          | Global middleware |
 
-### Request Object (`req`)
+### Request (`req`)
 
-| Property | Description |
-| :--- | :--- |
-| `req.params` | Route parameters (e.g., `/user/:id`) |
-| `req.query` | URL query strings parsed into an object |
-| `req.body` | Parsed JSON body |
-| `req.files` | Array of uploaded files (if multipart) |
-| `req.ip` | Client IP address |
+| Property     | Description      |
+| :----------- | :--------------- |
+| `req.params` | Route parameters |
+| `req.query`  | Query strings    |
+| `req.body`   | Parsed body      |
+| `req.files`  | Uploaded files   |
 
-### Response Object (`res`)
+### Response (`res`)
 
-| Method | Description |
-| :--- | :--- |
-| `res.json(data)` | Sends JSON response |
-| `res.send(data)` | Sends text, number, or object |
-| `res.status(code)` | Sets HTTP status code (chainable) |
-| `res.sendFile(path)` | Sends file from public folder |
-| `res.sendHtml(file)` | Sends HTML file from public folder |
-| `res.redirect(url)` | Redirects client to URL |
-| `res.success(data)` | **Helper:** Sends 200 OK JSON |
-| `res.created(data)` | **Helper:** Sends 201 Created JSON |
-| `res.badRequest(msg)` | **Helper:** Sends 400 Bad Request JSON |
-| `res.unauthorized(msg)`| **Helper:** Sends 401 Unauthorized JSON |
-| `res.forbidden(msg)` | **Helper:** Sends 403 Forbidden JSON |
-| `res.notFound(msg)` | **Helper:** Sends 404 Not Found JSON |
-| `res.serverError(err)` | **Helper:** Sends 500 Internal Error |
+| Method              | Description   |
+| :------------------ | :------------ |
+| `res.json(data)`    | Send JSON     |
+| `res.send(data)`    | Send response |
+| `res.status(code)`  | Set status    |
+| `res.success(data)` | 200 OK        |
+| `res.notFound()`    | 404           |
 
-## 🎨 Color Utility
-Vibe exports a lightweight color utility for your CLI scripts.
-
-```javascript
-import { color } from "./vibe.js"; // or ./utils/colors.js
-
-console.log(color.green("Success!"));
-console.log(color.red("Error!"));
-```
+---
 
 ## 📝 License
 
-Part of the **GeNeSix** brand.  
-Created by **Nnamdi "Joe" Amaga**.  
-MIT License.
+Part of the **GeNeSix** brand. Created by **Nnamdi "Joe" Amaga**. MIT License.

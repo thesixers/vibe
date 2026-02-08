@@ -1,5 +1,5 @@
 import os from "os";
-import { color } from "./colors.js";
+import { color } from "../helpers/colors.js";
 
 /**
  * Parses query string from URL into an object.
@@ -58,9 +58,13 @@ export function matchPath(pathRegex, requestPath) {
 export function PathToRegex(path) {
   const pathSegments = path.split("/").filter(Boolean);
   const paramKeys = [];
-  let pathRegex = "";
 
-  pathRegex += "^";
+  // Handle root path specially
+  if (pathSegments.length === 0) {
+    return { pathRegex: /^\/$/, paramKeys: [] };
+  }
+
+  let pathRegex = "^";
   for (let index = 0; index < pathSegments.length; index++) {
     const segment = pathSegments[index];
     if (segment.startsWith(":")) {
@@ -115,7 +119,7 @@ export async function runIntercept(intercept, req, res, isRoute = true) {
   for (const func of funcs) {
     if (typeof func !== "function") {
       throw new Error(
-        `All ${isRoute ? "Route" : "Global"} intercepts must be functions`
+        `All ${isRoute ? "Route" : "Global"} intercepts must be functions`,
       );
     }
 
@@ -157,19 +161,21 @@ export function getNetworkIP(host, port) {
         .map((iface) =>
           iface.address === "::1"
             ? { address: "[::1]", fam: iface.family }
-            : { address: iface.address, fam: iface.family }
+            : { address: iface.address, fam: iface.family },
         )
-        .filter((addr) => !addr.address.startsWith("fe80"))
+        .filter((addr) => !addr.address.startsWith("fe80")),
     );
   }
 
   for (const addrs of addresses) {
     if (host === "0.0.0.0") {
       // => listens on all ipv4 hosts
-      if (addrs.fam === "IPv4") log(`Server listening at - \x1b[4mhttp://${addrs.address}:${port}`);
+      if (addrs.fam === "IPv4")
+        log(`Server listening at - \x1b[4mhttp://${addrs.address}:${port}`);
     }
 
-    if (host === "::") { // => listens on all ipv6/ipv4 hosts
+    if (host === "::") {
+      // => listens on all ipv6/ipv4 hosts
       log(`Server listening at - \x1b[4mhttp://${addrs.address}:${port}`);
     }
 
@@ -184,7 +190,9 @@ export function getNetworkIP(host, port) {
  * @param {string} message
  */
 export function log(message) {
-  process.stdout.write(`${color.green("[VIBE LOG]:")} ${color.bright(message)}\n`);
+  process.stdout.write(
+    `${color.green("[VIBE LOG]:")} ${color.bright(message)}\n`,
+  );
 }
 
 /**

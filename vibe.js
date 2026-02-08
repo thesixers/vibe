@@ -1,7 +1,17 @@
-import server from "./utils/server.js";
-import { adapt } from "./utils/adapt.js";
-import { PathToRegex } from "./utils/handler.js";
-import { color } from "./utils/colors.js";
+import server from "./utils/core/server.js";
+import { adapt } from "./utils/helpers/adapt.js";
+import { color } from "./utils/helpers/colors.js";
+import { RouteTrie } from "./utils/core/trie.js";
+import { PathToRegex } from "./utils/core/handler.js";
+
+/**
+ * Helper to generate regex for a path
+ * @param {string} path
+ * @returns {RegExp}
+ */
+function pathToRegex(path) {
+  return PathToRegex(path).pathRegex;
+}
 
 /**
  * @typedef {import("http").IncomingMessage} IncomingMessage
@@ -50,31 +60,27 @@ import { color } from "./utils/colors.js";
 
 /**
  * Route handler function.
- *
  * Returning a value implicitly sends a response.
- *
  * @typedef {(req: VibeRequest, res: VibeResponse) => any | Promise<any>} Handler
  */
 
 /**
  * Middleware / interceptor function.
  * Returning or resolving to `false` stops execution.
- *
  * @typedef {(req: VibeRequest, res: VibeResponse) => boolean | void | Promise<boolean | void>} Interceptor
  */
 
 /**
  * File upload configuration for a route.
- *
  * @typedef {Object} MediaOptions
- * @property {boolean} [public=true]  Save file under public folder
- * @property {string|null} [dest]     Subfolder inside public or root
- * @property {number} [maxSize]       Max file size in bytes
+ * @property {boolean} [public=true] Save file under public folder
+ * @property {string|null} [dest] Subfolder inside public or root
+ * @property {number} [maxSize] Max file size in bytes
+ * @property {string[]} [allowedTypes] Allowed MIME types (e.g., ["image/png", "image/jpeg"])
  */
 
 /**
  * Additional route configuration.
- *
  * @typedef {Object} RouteOptions
  * @property {Interceptor | Interceptor[]} [intercept]
  * @property {MediaOptions} [media]
@@ -82,87 +88,84 @@ import { color } from "./utils/colors.js";
 
 /**
  * Internal route representation.
- *
  * @typedef {Object} VibeRoute
  * @property {string} method
  * @property {string} path
- * @property {RegExp} pathRegex
- * @property {string[]} paramKeys
  * @property {Handler | string | number | object} handler
  * @property {Interceptor | Interceptor[] | null} intercept
  * @property {MediaOptions} media
  */
 
 /**
- * Internal framework configuration.
- *
- * @typedef {Object} VibeConfig
- * @property {VibeRoute[]} routes
- * @property {string} publicFolder
- * @property {Interceptor[]} interceps
+ * Plugin callback function (Fastify-style).
+ * @typedef {(app: VibeApp, opts: Object) => void | Promise<void>} PluginCallback
  */
 
 /**
- * Route registration signatures.
- *
- * @typedef {(path: string, handler: Handler | any) => void} SimpleRoute
- * @typedef {(path: string, options: RouteOptions, handler: Handler) => void} OptionsRoute
+ * Plugin registration options.
+ * @typedef {Object} RegisterOptions
+ * @property {string} [prefix] Route prefix for all routes in this plugin
  */
 
 /**
  * Router interface exposed to users.
- *
  * @typedef {Object} RouterAPI
- * @property {SimpleRoute & OptionsRoute} get
- * @property {SimpleRoute & OptionsRoute} post
- * @property {SimpleRoute & OptionsRoute} put
- * @property {SimpleRoute & OptionsRoute} del
- * @property {SimpleRoute & OptionsRoute} patch
- * @property {SimpleRoute & OptionsRoute} head
+ * @property {Function} get
+ * @property {Function} post
+ * @property {Function} put
+ * @property {Function} del
+ * @property {Function} patch
+ * @property {Function} head
  * @property {(fn: Interceptor) => void} plugin
- * @property {(value: any) => void} log
+ * @property {(value: any, color?: string) => void} log
  */
 
 /**
  * Initializes a Vibe application instance.
- *
- * @returns {{
- *   get: RouterAPI["get"],
- *   post: RouterAPI["post"],
- *   put: RouterAPI["put"],
- *   del: RouterAPI["del"],
- *   patch: RouterAPI["patch"],
- *   head: RouterAPI["head"],
- *   listen: (port: number, host?: string) => void,
- *   include: (prefix: string | ((router: RouterAPI) => void), fn?: (router: RouterAPI) => void) => void,
- *   plugin: (fn: Interceptor) => void,
- *   setPublicFolder: (folder: string) => void,
- *   logRoutes: () => void,
- *   log: (value: any) => void
- * }}
+ * @returns {VibeApp}
  */
 const vibe = () => {
-  /** @type {VibeConfig} */
+  // Route trie for O(log n) matching (used when routes > threshold)
+  const trie = new RouteTrie();
+
+  // Route array for O(n) matching (used when routes <= threshold)
+  const routes = [];
+
+  // Threshold for switching between linear and trie matching
+  const TRIE_THRESHOLD = 50;
+
+  // Internal configuration
   const options = {
-    routes: [
-      {
-        method: "GET",
-        path: "/",
-        handler: (req, res) => res.sendHtml("vibe.html"), // Default landing
-        pathRegex: /^\/$/,
-        paramKeys: [],
-        intercept: null,
-        media: {
-          public: true,
-          dest: null,
-          maxSize: 10 * 1024 * 1024,
-        },
-      },
-    ],
+    trie,
+    routes,
+    routeCount: 0,
+    trieThreshold: TRIE_THRESHOLD,
     publicFolder: "public",
-    interceps: [],
+    interceptors: [],
+    decorators: {},
+    requestDecorators: {},
+    replyDecorators: {},
   };
 
+  // Register default landing route
+  const defaultRoute = {
+    method: "GET",
+    path: "/",
+    pathRegex: /^\/$/,
+    handler: (req, res) => res.sendHtml("vibe.html"),
+    intercept: null,
+    media: { public: true, dest: null, maxSize: 10 * 1024 * 1024 },
+  };
+  trie.insert("GET", "/", defaultRoute);
+  routes.push(defaultRoute);
+  options.routeCount = 1;
+
+  // Current prefix for scoped routes (used in register)
+  let currentPrefix = "";
+
+  /**
+   * Route registration methods
+   */
   const get = (p, a, b) => registerRoute("GET", p, a, b);
   const post = (p, a, b) => registerRoute("POST", p, a, b);
   const put = (p, a, b) => registerRoute("PUT", p, a, b);
@@ -178,39 +181,49 @@ const vibe = () => {
    * @param {Handler} [handler]
    */
   function registerRoute(method, path, opts, handler) {
+    // Apply current prefix
+    const fullPath = currentPrefix + path;
+
     /** @type {VibeRoute} */
     const route = {
       method,
-      path,
+      path: fullPath,
       pathRegex: null,
-      paramKeys: [],
       handler: null,
       intercept: null,
       media: {
         public: true,
         dest: null,
         maxSize: 10 * 1024 * 1024,
+        allowedTypes: null,
       },
     };
 
-    if (path === "/") {
-      // Special handling for overriding default route...
+    // Handle overriding root route
+    if (fullPath === "/") {
       if (handler !== undefined) {
         if (typeof opts !== "object" || Array.isArray(opts)) {
           throw new Error("Options must be an object when using 3-arg form");
         }
-        options.routes[0].intercept = opts.intercept;
-        options.routes[0].media.dest = opts.media?.dest;
-        options.routes[0].media.public =
-          opts.media?.public === undefined ? true : opts.media.public;
-        options.routes[0].media.maxSize =
-          opts.media?.maxSize || 10 * 1024 * 1024;
-        options.routes[0].handler = handler;
+        route.intercept = opts.intercept
+          ? wrapIntercepts(opts.intercept)
+          : null;
+        route.media = { ...route.media, ...opts.media };
+        route.handler = handler;
       } else {
-        options.routes[0].handler = opts;
+        route.handler = opts;
       }
-      const { paramKeys } = PathToRegex(path);
-      options.routes[0].paramKeys = paramKeys;
+      route.pathRegex = /^\/$/;
+      trie.insert(method, "/", route);
+      // Update existing root route in routes array
+      const rootIdx = routes.findIndex(
+        (r) => r.path === "/" && r.method === method,
+      );
+      if (rootIdx >= 0) routes[rootIdx] = route;
+      else {
+        routes.push(route);
+        options.routeCount++;
+      }
       return;
     }
 
@@ -218,21 +231,32 @@ const vibe = () => {
       if (typeof opts !== "object" || Array.isArray(opts)) {
         throw new Error("Options must be an object when using 3-arg form");
       }
-      route.intercept = opts.intercept;
-      route.media.dest = opts.media?.dest;
-      route.media.public =
-        opts.media.public === undefined ? true : opts.media.public;
-      route.media.maxSize = opts.media?.maxSize || 10 * 1024 * 1024;
+      route.intercept = opts.intercept ? wrapIntercepts(opts.intercept) : null;
+      route.media = { ...route.media, ...opts.media };
       route.handler = handler;
     } else {
       route.handler = opts;
     }
 
-    const { pathRegex, paramKeys } = PathToRegex(path);
-    route.pathRegex = pathRegex;
-    route.paramKeys = paramKeys;
+    // Generate regex for linear matching
+    route.pathRegex = pathToRegex(fullPath);
 
-    options.routes.push(route);
+    // Add to both structures
+    trie.insert(method, fullPath, route);
+    routes.push(route);
+    options.routeCount++;
+  }
+
+  /**
+   * Wraps interceptors with adapt() for consistent behavior
+   * @param {Interceptor | Interceptor[]} intercept
+   * @returns {Interceptor[]}
+   */
+  function wrapIntercepts(intercept) {
+    if (Array.isArray(intercept)) {
+      return intercept.map(adapt);
+    }
+    return [adapt(intercept)];
   }
 
   /**
@@ -244,29 +268,74 @@ const vibe = () => {
   function listen(port, host, callback) {
     addStatic();
 
-    // check port type
-    if (typeof port === "string" || "number") {
+    // Check port type
+    if (port === undefined) {
+      throw new Error("Port number is required to start the server");
+    }
+
+    if (typeof port === "string" || typeof port === "number") {
       if (!isNaN(Number(port))) {
         port = Number(port);
       } else {
         throw new Error("Port must be a number or numeric string");
       }
-    } else if (port === undefined) {
-      throw new Error("Port number is required to start the server");
     } else {
       throw new Error("Port must be a number or numeric string");
     }
 
     if (typeof host === "function") {
       callback = host;
-      host = undefined; // Default host
+      host = undefined;
     }
 
     server(options, Number(port), host, callback);
   }
 
   /**
-   * Groups routes or includes a sub-router
+   * Registers an encapsulated plugin (Fastify-style)
+   * @param {PluginCallback} fn - Plugin function
+   * @param {RegisterOptions} [opts={}] - Plugin options
+   */
+  async function register(fn, opts = {}) {
+    const previousPrefix = currentPrefix;
+
+    // Apply prefix if provided
+    if (opts.prefix) {
+      currentPrefix = previousPrefix + opts.prefix;
+    }
+
+    // Create a scoped app interface
+    const scopedApp = {
+      get,
+      post,
+      put,
+      del,
+      patch,
+      head,
+      plugin,
+      decorate,
+      decorateRequest,
+      decorateReply,
+      register,
+      log,
+      // Expose decorators
+      ...options.decorators,
+    };
+
+    // Execute plugin
+    try {
+      const result = fn(scopedApp, opts);
+      if (result && result.then) {
+        await result;
+      }
+    } finally {
+      // Restore prefix
+      currentPrefix = previousPrefix;
+    }
+  }
+
+  /**
+   * Groups routes or includes a sub-router (legacy API)
    * @param {string | ((router: RouterAPI) => void)} prefixOrFunc
    * @param {((router: RouterAPI) => void)} [maybeFunc]
    */
@@ -279,7 +348,7 @@ const vibe = () => {
   }
 
   /**
-   * Helper to generate a sub-router API with a prefix
+   * Helper to generate a sub-router API with a prefix (legacy)
    * @param {string} prefix
    * @returns {RouterAPI}
    */
@@ -300,64 +369,101 @@ const vibe = () => {
   }
 
   /**
-   * Registers a global middleware
-   * @param {Interceptor} interceps
+   * Registers a global middleware (interceptor)
+   * @param {Interceptor} interceptor
    */
-  function plugin(interceps) {
-    options.interceps.push(adapt(interceps));
+  function plugin(interceptor) {
+    options.interceptors.push(adapt(interceptor));
   }
 
+  /**
+   * Decorates the app instance with a custom property
+   * @param {string} name - Property name
+   * @param {any} value - Property value
+   */
+  function decorate(name, value) {
+    if (name in options.decorators) {
+      throw new Error(`Decorator '${name}' already exists`);
+    }
+    options.decorators[name] = value;
+  }
+
+  /**
+   * Decorates the request object with a custom property
+   * @param {string} name - Property name
+   * @param {any} value - Property value (or factory function)
+   */
+  function decorateRequest(name, value) {
+    if (name in options.requestDecorators) {
+      throw new Error(`Request decorator '${name}' already exists`);
+    }
+    options.requestDecorators[name] = value;
+  }
+
+  /**
+   * Decorates the response object with a custom property
+   * @param {string} name - Property name
+   * @param {any} value - Property value (or factory function)
+   */
+  function decorateReply(name, value) {
+    if (name in options.replyDecorators) {
+      throw new Error(`Reply decorator '${name}' already exists`);
+    }
+    options.replyDecorators[name] = value;
+  }
+
+  /**
+   * Logs all registered routes
+   */
   function logRoutes() {
-    const routes = options.routes.map((route) => route.path);
+    const routes = trie.getAllRoutes();
     console.log(routes);
   }
 
+  /**
+   * Sets the public folder for static files
+   * @param {string} foldername
+   */
   const setPublicFolder = (foldername) =>
     (options.publicFolder = foldername || "public");
 
+  /**
+   * Adds static file serving route
+   */
   function addStatic() {
-    // Static file serving logic...
     const routePath = `/${options.publicFolder}/*`;
-    const { pathRegex, paramKeys } = PathToRegex(routePath);
-    options.routes.push({
+    const route = {
       method: "GET",
       path: routePath,
       handler: (req, res) => {
         try {
-          log(req.url);
           const filePath = req.url
             .split("/")
             .filter(Boolean)
             .slice(1)
             .join("/");
           res.sendFile(filePath);
-        } catch (error) {
-          log(error.message);
-          if (error.message === "Not Found") {
-            res.status(404).send("Not Found");
-          }
+        } catch (err) {
+          log(err.message, "red");
+          res.status(404).send("Not Found");
         }
       },
-      pathRegex,
-      paramKeys,
-      intercept: null, // Fixed typo in original code
-      media: { public: true, dest: null }, // Added missing prop
-    });
+      intercept: null,
+      media: { public: true, dest: null },
+    };
+    trie.insert("GET", routePath, route);
   }
 
   /**
-   * Logs a message with a prefix.
+   * Logs a message with optional color
    * @param {string} message
+   * @param {string} [colorValue="reset"]
    */
-  const log = (message, colorValue = "reset") => process.stdout.write(`${color[colorValue](message)}\n`);
+  const log = (message, colorValue = "reset") =>
+    process.stdout.write(`${color[colorValue](message)}\n`);
 
-  /**
-   * Logs an error with a prefix.
-   * @param {string} message
-   */
-  const error = (message, colorValue = "red") => process.stderr.write(`${color[colorValue](message)}\n`);
-
-  return {
+  // Build the app object with decorators
+  const app = {
     get,
     post,
     put,
@@ -369,8 +475,34 @@ const vibe = () => {
     log,
     setPublicFolder,
     include,
-    plugin, // Added to return object
+    plugin,
+    register,
+    decorate,
+    decorateRequest,
+    decorateReply,
   };
+
+  // Add a getter for decorators
+  Object.defineProperty(app, "decorators", {
+    get() {
+      return options.decorators;
+    },
+  });
+
+  return app;
 };
 
 export default vibe;
+export { color };
+
+// Scalability utilities
+export {
+  clusterize,
+  isPrimary,
+  isWorker,
+  getWorkerId,
+  getWorkerCount,
+} from "./utils/scaling/cluster.js";
+export { LRUCache, cacheMiddleware } from "./utils/scaling/cache.js";
+export { Pool, createPool } from "./utils/scaling/pool.js";
+export { parseJsonStream } from "./utils/core/parser.js";

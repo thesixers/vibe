@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { mimeTypes } from "./mime.js";
+import { mimeTypes } from "../helpers/mime.js";
 
 /**
  * Extends the native ServerResponse with helper methods.
