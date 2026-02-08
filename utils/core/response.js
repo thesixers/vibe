@@ -141,6 +141,36 @@ export default function responseMethods(res, options) {
   };
 
   /**
+   * Send any file from an absolute path (not restricted to public folder).
+   * Use with caution - ensure you validate the path yourself.
+   * @param {string} absolutePath - Full path to the file
+   * @param {object} [opts] - Options
+   * @param {boolean} [opts.download=false] - Force download with Content-Disposition
+   * @param {string} [opts.filename] - Custom filename for download
+   */
+  res.sendAbsoluteFile = (absolutePath, opts = {}) => {
+    const resolvedPath = path.resolve(absolutePath);
+
+    if (!fs.existsSync(resolvedPath)) {
+      res.statusCode = 404;
+      return endResponse("Not Found");
+    }
+
+    const ext = path.extname(resolvedPath);
+    const filename = opts.filename || path.basename(resolvedPath);
+    const headers = {
+      "Content-Type": mimeTypes[ext] || "application/octet-stream",
+    };
+
+    if (opts.download) {
+      headers["Content-Disposition"] = `attachment; filename="${filename}"`;
+    }
+
+    res.writeHead(200, headers);
+    fs.createReadStream(resolvedPath).pipe(res);
+  };
+
+  /**
    * Sends a 200 OK success response.
    * @param {any} data
    * @param {string} message

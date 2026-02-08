@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+build/
+*.node
+
+# Tests
+tests/
+
+# Development files
+.git/
+.gitignore
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Demo files
+demo-server.js
+public/
+uploads/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+*.md
+!README.md
+assets/
