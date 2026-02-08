@@ -265,7 +265,7 @@ Set `NODE_ENV=production` for secure error handling.
 ## 📦 Installation
 
 ```bash
-npm install vibe-framework
+npm install vibe-gx
 ```
 
 ### Building Native Module (Optional)
