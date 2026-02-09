@@ -60,9 +60,8 @@
       3
     ],
     "runtimes": [
-      "node"
+      "napi"
     ],
-    "module_name": "vibe_native",
     "host": "https://github.com/genesix/vibe/releases/download/"
   }
 }
