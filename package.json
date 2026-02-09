@@ -24,7 +24,7 @@
     "benchmark": "node tests/full-benchmark.js",
     "start": "node server.js",
     "build:native": "node-gyp rebuild",
-    "install": "node-gyp rebuild || echo 'Native build failed, using JS fallback'",
+    "install": "prebuild-install || node-gyp rebuild",
     "clean": "node-gyp clean"
   },
   "keywords": [
@@ -44,7 +44,9 @@
   "license": "MIT",
   "dependencies": {
     "busboy": "^1.6.0",
-    "node-addon-api": "^7.1.1"
+    "node-addon-api": "^7.1.1",
+    "node-gyp-build": "^4.8.4",
+    "prebuild-install": "^7.1.3"
   },
   "optionalDependencies": {
     "node-gyp": "^10.3.1"
@@ -52,5 +54,15 @@
   "engines": {
     "node": ">=18"
   },
-  "gypfile": true
+  "gypfile": true,
+  "binary": {
+    "napi_versions": [
+      3
+    ],
+    "runtimes": [
+      "node"
+    ],
+    "module_name": "vibe_native",
+    "host": "https://github.com/genesix/vibe/releases/download/"
+  }
 }

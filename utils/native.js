@@ -8,6 +8,7 @@
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
 import path from "path";
+import load from "node-gyp-build";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,17 +16,12 @@ const __dirname = path.dirname(__filename);
 let native = null;
 let useNative = false;
 
-// Try to load native module using createRequire for ESM compatibility
+// Try to load native module using node-gyp-build
 try {
   const require = createRequire(import.meta.url);
-  const nativePath = path.join(
-    __dirname,
-    "..",
-    "build",
-    "Release",
-    "vibe_native.node",
-  );
-  native = require(nativePath);
+  // Point to the root directory where binding.gyp is located
+  const rootDir = path.join(__dirname, "..");
+  native = load(rootDir);
   useNative = true;
   console.log("[VIBE] Native module loaded (C++ optimizations enabled)");
 } catch (err) {
