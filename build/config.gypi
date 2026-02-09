@@ -493,7 +493,6 @@
     "userconfig": "/home/genesix/.npmrc",
     "cache": "/home/genesix/.npm",
     "local_prefix": "/home/genesix/Documents/workspace/vibe",
-    "build_from_source": "true",
     "globalconfig": "/etc/npmrc",
     "init_module": "/home/genesix/.npm-init.js",
     "npm_version": "10.9.2",
