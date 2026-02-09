@@ -258,3 +258,153 @@ export interface VibeApp extends RouterAPI {
  * @returns Vibe application instance
  */
 export default function vibe(): VibeApp;
+
+// ==========================================
+// LRU Cache
+// ==========================================
+
+export interface CacheOptions {
+  /** Maximum number of entries. Default: 1000 */
+  max?: number;
+  /** Default TTL in milliseconds. Default: 60000 */
+  ttl?: number;
+}
+
+export interface CacheEntry {
+  value: any;
+  expires: number;
+  etag: string;
+}
+
+export class LRUCache {
+  constructor(options?: CacheOptions);
+
+  /** Generate cache key from request */
+  static key(method: string, url: string): string;
+
+  /** Generate ETag from value */
+  static etag(value: any): string;
+
+  /** Get value from cache */
+  get(key: string): CacheEntry | null;
+
+  /** Set value in cache */
+  set(key: string, value: any, ttl?: number): CacheEntry;
+
+  /** Delete entry from cache */
+  delete(key: string): boolean;
+
+  /** Clear all entries */
+  clear(): void;
+
+  /** Get cache size */
+  readonly size: number;
+
+  /** Check if key exists and is valid */
+  has(key: string): boolean;
+}
+
+/**
+ * Create cache middleware for route-level caching
+ */
+export function cacheMiddleware(cache: LRUCache): Interceptor;
+
+// ==========================================
+// Connection Pool
+// ==========================================
+
+export interface PoolOptions<T> {
+  /** Async function to create a new resource */
+  create: () => Promise<T>;
+  /** Async function to destroy a resource */
+  destroy: (resource: T) => Promise<void>;
+  /** Function to validate a resource is still usable */
+  validate?: (resource: T) => boolean;
+  /** Minimum pool size. Default: 0 */
+  min?: number;
+  /** Maximum pool size. Default: 10 */
+  max?: number;
+  /** Timeout for acquiring resource (ms). Default: 30000 */
+  acquireTimeout?: number;
+  /** Time before idle resources are destroyed (ms). Default: 60000 */
+  idleTimeout?: number;
+}
+
+export interface PoolStats {
+  available: number;
+  inUse: number;
+  waiting: number;
+  max: number;
+}
+
+export class Pool<T = any> {
+  constructor(options: PoolOptions<T>);
+
+  /** Acquire a resource from the pool */
+  acquire(): Promise<T>;
+
+  /** Release a resource back to the pool */
+  release(resource: T): void;
+
+  /** Execute function with acquired resource (auto-release) */
+  use<R>(fn: (resource: T) => Promise<R> | R): Promise<R>;
+
+  /** Close the pool and destroy all resources */
+  close(): Promise<void>;
+
+  /** Get pool statistics */
+  readonly stats: PoolStats;
+}
+
+/**
+ * Create a new connection pool
+ */
+export function createPool<T>(options: PoolOptions<T>): Pool<T>;
+
+// ==========================================
+// Cluster Mode
+// ==========================================
+
+export interface ClusterOptions {
+  /** Number of worker processes. Default: CPU count */
+  workers?: number;
+  /** Auto-restart crashed workers. Default: true */
+  restart?: boolean;
+  /** Delay before restarting (ms). Default: 1000 */
+  restartDelay?: number;
+  /** Called when worker starts */
+  onWorkerStart?: (worker: any) => void;
+  /** Called when worker exits */
+  onWorkerExit?: (worker: any, code: number, signal: string) => void;
+}
+
+/**
+ * Start the application in cluster mode
+ */
+export function clusterize(startFn: () => void, options?: ClusterOptions): void;
+
+/** Check if current process is the primary */
+export function isPrimary(): boolean;
+
+/** Check if current process is a worker */
+export function isWorker(): boolean;
+
+/** Get worker ID (0 for primary) */
+export function getWorkerId(): number;
+
+/** Get number of active workers */
+export function getWorkerCount(): number;
+
+// ==========================================
+// Streaming Utilities
+// ==========================================
+
+/**
+ * Parse JSON stream (line-delimited JSON)
+ */
+export function parseJsonStream(
+  stream: NodeJS.ReadableStream,
+  onData: (data: any) => void,
+  onEnd?: () => void,
+  onError?: (err: Error) => void,
+): void;
