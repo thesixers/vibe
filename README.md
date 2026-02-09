@@ -8,8 +8,27 @@
     <img src="https://img.shields.io/badge/performance-14,687_RPS-brightgreen" alt="Performance" />
     <img src="https://img.shields.io/badge/vs_Express-2.2x_faster-blue" alt="vs Express" />
     <img src="https://img.shields.io/badge/vs_Fastify-30%25_faster-orange" alt="vs Fastify" />
+    <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
   </p>
 </div>
+
+---
+
+## 📦 Installation
+
+```bash
+npm install vibe-gx
+```
+
+### Optional: Build C++ Native Module
+
+For maximum performance, build the optional C++ native module:
+
+```bash
+npm run build:native
+```
+
+> If the build fails, Vibe automatically falls back to pure JavaScript with zero configuration.
 
 ---
 
@@ -40,7 +59,8 @@
 | ⚡ **Cluster Mode**      | Built-in multi-process scaling                             |
 | 💾 **LRU Cache**         | Built-in response caching with ETag                        |
 | 🔗 **Connection Pool**   | Generic pool for databases                                 |
-| 📂 **Streaming**         | Large file uploads without buffering                       |
+| 📂 **File Uploads**      | Multipart uploads with size/type validation                |
+| 🌊 **Streaming**         | Large file uploads without buffering                       |
 | 🔒 **Security**          | Path traversal protection, body limits, error sanitization |
 | 🔄 **Express Adapter**   | Use any Express middleware with `adapt()`                  |
 
@@ -49,7 +69,7 @@
 ## 🚀 Quick Start
 
 ```javascript
-import vibe from "vibe";
+import vibe from "vibe-gx";
 
 const app = vibe();
 
@@ -66,80 +86,222 @@ app.listen(3000);
 
 ---
 
-## 📊 Benchmarks
-
-Tested with 5,000 requests, 50 concurrency:
-
-```
-Framework    | JSON RPS    | vs Express | vs Fastify
--------------|-------------|------------|------------
-Vibe         | 14,687      | 2.2x ✅    | 1.3x ✅
-Fastify      | 11,289      | 1.7x       | baseline
-Express      | 6,629       | baseline   | 0.6x
-```
-
-Run benchmarks yourself:
-
-```bash
-npm run benchmark
-```
-
----
-
 ## 📖 Core API
 
 ### Routes
 
+Vibe supports all standard HTTP methods with a clean, flexible syntax:
+
 ```javascript
-// Simple string response
+// String response
 app.get("/", "Hello World");
 
-// JSON response (just return object)
+// JSON response (just return an object)
 app.get("/json", { message: "Hello" });
 
-// With handler function
+// Handler function with request access
 app.get("/users/:id", (req) => ({ id: req.params.id }));
 
-// With interceptor (middleware)
+// Multiple route parameters
+app.get("/posts/:postId/comments/:commentId", (req) => ({
+  postId: req.params.postId,
+  commentId: req.params.commentId,
+}));
+
+// With options (interceptors, file uploads)
 app.post("/protected", { intercept: authCheck }, handler);
 
 // All HTTP methods
-app.get() / app.post() / app.put() / app.del() / app.patch() / app.head();
+app.get("/");
+app.post("/");
+app.put("/");
+app.del("/"); // DELETE
+app.patch("/");
+app.head("/");
 ```
 
-### Plugins (Fastify-style)
+### Query Parameters
 
 ```javascript
-// Register with prefix
+// GET /search?q=hello&page=2
+app.get("/search", (req) => ({
+  query: req.query.q, // "hello"
+  page: req.query.page, // "2"
+}));
+```
+
+### Request Body
+
+```javascript
+app.post("/users", (req) => {
+  const { name, email } = req.body;
+  return { created: { name, email } };
+});
+```
+
+---
+
+## 🔌 Plugins (Fastify-style)
+
+Plugins provide encapsulated route groups with optional prefixes:
+
+```javascript
+// Register a plugin with prefix
 await app.register(
-  async (app) => {
-    app.get("/status", { status: "ok" }); // GET /api/status
-    app.get("/health", { healthy: true }); // GET /api/health
+  async (api) => {
+    api.get("/status", { status: "ok" }); // GET /api/status
+    api.get("/health", { healthy: true }); // GET /api/health
+
+    // Plugins can have their own interceptors
+    api.plugin((req, res) => {
+      console.log(`[API] ${req.method} ${req.url}`);
+    });
   },
   { prefix: "/api" },
 );
+
+// Nested plugins
+await app.register(
+  async (v1) => {
+    v1.get("/users", { version: 1 }); // GET /api/v1/users
+  },
+  { prefix: "/api/v1" },
+);
 ```
 
-### Decorators
+---
+
+## 🛡️ Interceptors (Middleware)
+
+Interceptors run before your handler. Return `false` to stop execution.
+
+### Single Interceptor
 
 ```javascript
-app.decorate("config", { env: "prod" });
-app.decorateRequest("user", null);
+const authCheck = (req, res) => {
+  if (!req.headers.authorization) {
+    res.unauthorized("Token required");
+    return false; // Stop execution
+  }
+  req.user = { id: 1 };
+  return true; // Continue to handler
+};
+
+app.get("/protected", { intercept: authCheck }, (req) => {
+  return { user: req.user };
+});
+```
+
+### Multiple Interceptors
+
+```javascript
+app.get(
+  "/admin",
+  {
+    intercept: [authCheck, adminCheck, rateLimiter],
+  },
+  handler,
+);
+```
+
+### Global Interceptors
+
+```javascript
+// Applies to ALL routes
+app.plugin((req, res) => {
+  console.log(`${req.method} ${req.url}`);
+});
+```
+
+---
+
+## 🎨 Decorators
+
+Extend app, request, or response with custom properties:
+
+```javascript
+// App decorator - shared config
+app.decorate("config", { env: "production", version: "1.0.0" });
+
+// Access via app.decorators.config
+app.get("/version", () => ({ version: app.decorators.config.version }));
+
+// Request decorator - add to all requests
+app.decorateRequest("timestamp", () => Date.now());
+
+app.get("/time", (req) => ({ timestamp: req.timestamp }));
+
+// Reply decorator - add methods to response
 app.decorateReply("sendSuccess", function (data) {
   this.success(data);
 });
 ```
 
-### Express Middleware Adapter
+---
+
+## 📂 File Uploads
+
+Vibe supports multipart file uploads with built-in validation.
+
+### Basic Upload
 
 ```javascript
-import { adapt } from "vibe/utils/helpers/adapt.js";
-import cors from "cors";
-import helmet from "helmet";
-
-app.plugin(adapt(cors()));
-app.plugin(adapt(helmet()));
+app.post("/upload", { media: { dest: "uploads" } }, (req) => {
+  return { files: req.files, body: req.body };
+});
 ```
+
+### Media Options
+
+```javascript
+app.post(
+  "/upload",
+  {
+    media: {
+      dest: "uploads", // Subfolder destination
+      public: true, // Save inside public folder (default: true)
+      maxSize: 5 * 1024 * 1024, // Max file size: 5MB
+      allowedTypes: ["image/jpeg", "image/png", "image/*"], // Wildcards supported
+    },
+  },
+  handler,
+);
+```
+
+### Uploaded File Object
+
+```javascript
+// req.files contains:
+[
+  {
+    filename: "image-a7x92b.png", // Saved filename (safe)
+    originalName: "photo.png", // Original filename
+    type: "image/png", // MIME type
+    filePath: "/uploads/image-a7x92b.png", // Full path
+    size: 102400, // Size in bytes
+  },
+];
+```
+
+### Streaming Uploads (Large Files)
+
+For large files, use streaming mode to avoid buffering in memory:
+
+```javascript
+import fs from "fs";
+
+app.post("/upload-large", { media: { streaming: true } }, (req) => {
+  req.on("file", (name, stream, info) => {
+    stream.pipe(fs.createWriteStream(`/uploads/${info.filename}`));
+  });
+  return { status: "uploading" };
+});
+```
+
+### Error Handling
+
+- **413 Payload Too Large** - File exceeds `maxSize`
+- **415 Unsupported Media Type** - File type not in `allowedTypes`
 
 ---
 
@@ -147,56 +309,95 @@ app.plugin(adapt(helmet()));
 
 ### Cluster Mode
 
+Scale across all CPU cores automatically:
+
 ```javascript
-import vibe, { clusterize } from "vibe";
+import vibe, { clusterize, isPrimary, getWorkerId } from "vibe-gx";
 
 clusterize(
   () => {
     const app = vibe();
-    app.get("/", "Hello from worker!");
+    app.get("/", `Hello from worker ${getWorkerId()}!`);
     app.listen(3000);
   },
-  { workers: 4, restart: true },
+  {
+    workers: 4, // Number of workers (default: CPU count)
+    restart: true, // Auto-restart crashed workers
+    restartDelay: 1000, // Delay before restart (ms)
+  },
 );
 ```
 
-### Response Caching
+### LRU Cache
+
+Built-in response caching with ETag support:
 
 ```javascript
-import vibe, { LRUCache, cacheMiddleware } from "vibe";
+import vibe, { LRUCache, cacheMiddleware } from "vibe-gx";
 
-const cache = new LRUCache({ max: 1000, ttl: 60000 });
-
-app.get("/data", { intercept: cacheMiddleware(cache) }, () => {
-  return { expensive: "computation" };
+const cache = new LRUCache({
+  max: 1000, // Maximum entries
+  ttl: 60000, // TTL in milliseconds (60 seconds)
 });
+
+app.get("/expensive", { intercept: cacheMiddleware(cache) }, async () => {
+  // This only runs on cache MISS
+  return await expensiveOperation();
+});
+
+// Manual cache operations
+cache.set("key", { data: "value" });
+cache.get("key"); // { value, expires, etag }
+cache.delete("key");
+cache.clear();
 ```
 
 ### Connection Pool
 
+Generic connection pool for databases:
+
 ```javascript
-import vibe, { createPool } from "vibe";
+import vibe, { createPool } from "vibe-gx";
 
 const dbPool = createPool({
-  create: async () => new DBConnection(),
-  destroy: async (conn) => conn.close(),
-  max: 10,
+  create: async () => await connectToDatabase(),
+  destroy: async (conn) => await conn.close(),
+  validate: (conn) => conn.isAlive(),
+  min: 2, // Minimum connections
+  max: 10, // Maximum connections
+  acquireTimeout: 30000, // Timeout to acquire (ms)
+  idleTimeout: 60000, // Idle timeout (ms)
 });
 
 app.get("/users", async () => {
-  return await dbPool.use((conn) => conn.query("SELECT * FROM users"));
+  return await dbPool.use(async (conn) => {
+    return await conn.query("SELECT * FROM users");
+  });
 });
+
+// Pool statistics
+console.log(dbPool.stats);
+// { available: 5, inUse: 2, waiting: 0, max: 10 }
+
+// Cleanup on shutdown
+process.on("SIGTERM", () => dbPool.close());
 ```
 
-### Streaming Uploads
+---
+
+## 🔄 Express Middleware Adapter
+
+Use any Express middleware with the adapter:
 
 ```javascript
-app.post("/upload", { media: { streaming: true } }, (req) => {
-  req.on("file", (name, stream, info) => {
-    stream.pipe(fs.createWriteStream(`/uploads/${info.filename}`));
-  });
-  return { status: "uploading" };
-});
+import { adapt } from "vibe-gx/utils/helpers/adapt.js";
+import cors from "cors";
+import helmet from "helmet";
+import compression from "compression";
+
+app.plugin(adapt(cors()));
+app.plugin(adapt(helmet()));
+app.plugin(adapt(compression()));
 ```
 
 ---
@@ -214,7 +415,7 @@ Built-in protections:
 | Safe filename generation                |   ✅   |
 | Port validation                         |   ✅   |
 
-Set `NODE_ENV=production` for secure error handling.
+Set `NODE_ENV=production` for secure error handling (stack traces hidden).
 
 ---
 
@@ -231,52 +432,106 @@ Set `NODE_ENV=production` for secure error handling.
 | `app.decorate(name, value)`                      | Add app property     |
 | `app.decorateRequest(name, value)`               | Add to all requests  |
 | `app.decorateReply(name, value)`                 | Add to all responses |
+| `app.setPublicFolder(path)`                      | Set static folder    |
+| `app.logRoutes()`                                | Log all routes       |
 
 ### Request (`req`)
 
-| Property     | Description                |
-| :----------- | :------------------------- |
-| `req.params` | Route parameters           |
-| `req.query`  | Query string (lazy parsed) |
-| `req.body`   | Parsed body                |
-| `req.files`  | Uploaded files             |
-| `req.ip`     | Client IP                  |
+| Property      | Description                |
+| :------------ | :------------------------- |
+| `req.params`  | Route parameters (`:id`)   |
+| `req.query`   | Query string (`?page=1`)   |
+| `req.body`    | Parsed JSON/form body      |
+| `req.files`   | Uploaded files (multipart) |
+| `req.ip`      | Client IP address          |
+| `req.method`  | HTTP method                |
+| `req.url`     | Request URL                |
+| `req.headers` | Request headers            |
 
 ### Response (`res`)
 
-| Method                     | Description      |
-| :------------------------- | :--------------- |
-| `res.json(data)`           | Send JSON        |
-| `res.send(data)`           | Send response    |
-| `res.status(code)`         | Set status code  |
-| `res.success(data)`        | 200 OK           |
-| `res.created(data)`        | 201 Created      |
-| `res.badRequest(msg?)`     | 400              |
-| `res.unauthorized(msg?)`   | 401              |
-| `res.forbidden(msg?)`      | 403              |
-| `res.notFound(msg?)`       | 404              |
-| `res.serverError(err?)`    | 500              |
-| `res.redirect(url, code?)` | Redirect         |
-| `res.sendFile(path)`       | Send static file |
-| `res.sendHtml(path)`       | Send HTML file   |
+| Method                              | Description                  |
+| :---------------------------------- | :--------------------------- |
+| `res.json(data)`                    | Send JSON                    |
+| `res.send(data)`                    | Send any response            |
+| `res.status(code)`                  | Set status (chainable)       |
+| `res.redirect(url, code?)`          | Redirect (302)               |
+| `res.sendFile(path)`                | Send file from public folder |
+| `res.sendAbsoluteFile(path, opts?)` | Send file from any path      |
+| `res.sendHtml(filename)`            | Send HTML file               |
+| `res.success(data?, msg?)`          | 200 OK                       |
+| `res.created(data?, msg?)`          | 201 Created                  |
+| `res.badRequest(msg?, errors?)`     | 400 Bad Request              |
+| `res.unauthorized(msg?)`            | 401 Unauthorized             |
+| `res.forbidden(msg?)`               | 403 Forbidden                |
+| `res.notFound(msg?)`                | 404 Not Found                |
+| `res.conflict(msg?)`                | 409 Conflict                 |
+| `res.serverError(err?)`             | 500 Server Error             |
+
+### Cluster Utilities
+
+| Function               | Description                   |
+| :--------------------- | :---------------------------- |
+| `clusterize(fn, opts)` | Start in cluster mode         |
+| `isPrimary()`          | Check if primary process      |
+| `isWorker()`           | Check if worker process       |
+| `getWorkerId()`        | Get worker ID (0 for primary) |
+| `getWorkerCount()`     | Get number of active workers  |
+
+### Cache Utilities
+
+| Class/Function              | Description               |
+| :-------------------------- | :------------------------ |
+| `new LRUCache(opts)`        | Create LRU cache instance |
+| `cacheMiddleware(cache)`    | Create cache interceptor  |
+| `LRUCache.key(method, url)` | Generate cache key        |
+| `LRUCache.etag(value)`      | Generate ETag             |
+
+### Pool Utilities
+
+| Class/Function     | Description            |
+| :----------------- | :--------------------- |
+| `createPool(opts)` | Create connection pool |
+| `pool.acquire()`   | Acquire resource       |
+| `pool.release(r)`  | Release resource       |
+| `pool.use(fn)`     | Use with auto-release  |
+| `pool.close()`     | Close pool             |
+| `pool.stats`       | Get pool statistics    |
 
 ---
 
-## 📦 Installation
+## 📊 Benchmarks
+
+Run benchmarks yourself:
 
 ```bash
-npm install vibe-gx
+npm run benchmark
 ```
 
-### Building Native Module (Optional)
+Tested with 5,000 requests, 50 concurrency:
 
-For maximum performance, build the C++ native module:
+```
+Framework    | JSON RPS    | vs Express | vs Fastify
+-------------|-------------|------------|------------
+Vibe         | 14,687      | 2.2x ✅    | 1.3x ✅
+Fastify      | 11,289      | 1.7x       | baseline
+Express      | 6,629       | baseline   | 0.6x
+```
+
+---
+
+## 🧪 Testing
 
 ```bash
-npm run build:native
-```
+# Run all tests
+npm test
 
-If the build fails, Vibe automatically falls back to pure JavaScript.
+# Run comprehensive tests
+npm run test:all
+
+# Run benchmarks
+npm run benchmark
+```
 
 ---
 
