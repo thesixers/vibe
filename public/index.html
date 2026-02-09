@@ -1,0 +1,31 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Vibe Demo</title>
+  <style>
+    body { font-family: system-ui; max-width: 800px; margin: 50px auto; padding: 20px; }
+    h1 { color: #6366f1; }
+    .route { background: #f1f5f9; padding: 10px; margin: 10px 0; border-radius: 8px; }
+    code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>🚀 Vibe Demo Server</h1>
+  <p>Testing all framework features</p>
+  
+  <h2>Available Routes</h2>
+  <div class="route"><code>GET /</code> - Static string response</div>
+  <div class="route"><code>GET /json</code> - JSON response</div>
+  <div class="route"><code>GET /users/:id</code> - Route parameters</div>
+  <div class="route"><code>GET /search?q=term</code> - Query parameters</div>
+  <div class="route"><code>POST /echo</code> - JSON body echo</div>
+  <div class="route"><code>POST /upload</code> - File upload</div>
+  <div class="route"><code>GET /protected</code> - Auth interceptor</div>
+  <div class="route"><code>GET /api/v1/status</code> - Plugin with prefix</div>
+  <div class="route"><code>GET /cached</code> - Cached response</div>
+  <div class="route"><code>GET /html</code> - HTML file response</div>
+  <div class="route"><code>GET /error</code> - Error handling</div>
+  <div class="route"><code>GET /decorated</code> - Decorators demo</div>
+</body>
+</html>

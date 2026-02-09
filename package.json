@@ -1,7 +1,7 @@
 {
   "name": "vibe-gx",
-  "version": "1.0.7",
-  "description": "A lightweight, regex-based Node.js web framework built for speed and simplicity.",
+  "version": "2.0.0",
+  "description": "A lightweight, high-performance Node.js web framework with optional C++ optimizations.",
   "type": "module",
   "main": "vibe.js",
   "types": "vibe.d.ts",
@@ -14,11 +14,18 @@
   "files": [
     "vibe.js",
     "vibe.d.ts",
-    "utils/"
+    "utils/",
+    "native/",
+    "binding.gyp"
   ],
   "scripts": {
-    "test": "echo \"No tests yet\"",
-    "start": "node server.js"
+    "test": "node tests/unit.test.js && node tests/live.test.js",
+    "test:all": "node tests/unit.test.js && node tests/live.test.js && node tests/scalability.test.js",
+    "benchmark": "node tests/full-benchmark.js",
+    "start": "node server.js",
+    "build:native": "node-gyp rebuild",
+    "install": "node-gyp rebuild || echo 'Native build failed, using JS fallback'",
+    "clean": "node-gyp clean"
   },
   "keywords": [
     "node",
@@ -28,19 +35,22 @@
     "middleware",
     "web",
     "backend",
-    "regex-router",
+    "fast",
+    "native",
+    "performance",
     "express-alternative"
   ],
   "author": "Nnamdi \"Joe\" Amaga",
   "license": "MIT",
   "dependencies": {
-    "busboy": "^1.6.0"
+    "busboy": "^1.6.0",
+    "node-addon-api": "^7.1.1"
+  },
+  "optionalDependencies": {
+    "node-gyp": "^10.3.1"
   },
   "engines": {
     "node": ">=18"
   },
-  "devDependencies": {
-    "express": "^5.2.1",
-    "fastify": "^5.7.4"
-  }
+  "gypfile": true
 }

@@ -9,6 +9,7 @@ import {
 import bodyParser from "./parser.js";
 import responseMethods from "./response.js";
 import dns from "node:dns/promises";
+import { parseQuery as nativeParseQuery, isNativeEnabled } from "../native.js";
 
 // Pre-allocated 404 response
 const NOT_FOUND_BODY = "Not Found";
@@ -76,29 +77,15 @@ async function server(options, port, host, callback) {
     const qIdx = url.indexOf("?");
     const pathname = qIdx < 0 ? url : url.slice(0, qIdx);
 
-    // Lazy query (getter) with proper URL decoding
+    // Lazy query (getter) - uses native C++ when available
     let _query;
     req.__defineGetter__("query", function () {
       if (_query === undefined) {
         if (qIdx < 0) {
           _query = {};
         } else {
-          _query = {};
-          const qs = url.slice(qIdx + 1);
-          const pairs = qs.split("&");
-          for (let i = 0; i < pairs.length; i++) {
-            const eq = pairs[i].indexOf("=");
-            if (eq > 0) {
-              try {
-                const key = decodeURIComponent(pairs[i].slice(0, eq));
-                const value = decodeURIComponent(pairs[i].slice(eq + 1));
-                _query[key] = value;
-              } catch {
-                // Invalid encoding, use raw value
-                _query[pairs[i].slice(0, eq)] = pairs[i].slice(eq + 1);
-              }
-            }
-          }
+          // Use native parser if available
+          _query = nativeParseQuery(url.slice(qIdx + 1));
         }
       }
       return _query;
