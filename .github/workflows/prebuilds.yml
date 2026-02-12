@@ -1,0 +1,84 @@
+name: Build Prebuilds
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fix for Windows native builds
+      - name: Setup MSVC (Windows only)
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build prebuilds
+        run: npx prebuildify --napi --strip
+
+      - name: Upload prebuilds
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilds-${{ matrix.os }}
+          path: prebuilds/
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all prebuilds
+        uses: actions/download-artifact@v4
+        with:
+          path: prebuilds-downloaded
+
+      - name: Debug - List all files
+        run: |
+          echo "=== Directory structure ==="
+          find prebuilds-downloaded -type f
+          echo "=== .node files ==="
+          find prebuilds-downloaded -name "*.node"
+
+      - name: Collect and rename binaries
+        run: |
+          mkdir -p release-binaries
+
+          find prebuilds-downloaded -name "*.node" | while read -r file; do
+            platform=$(basename "$(dirname "$file")")
+
+            echo "Copying $file -> release-binaries/vibe-gx-${platform}.node"
+            cp "$file" "release-binaries/vibe-gx-${platform}.node"
+          done
+
+          echo "=== Final binaries ==="
+          ls -lh release-binaries/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-binaries/*.node
+          generate_release_notes: true
