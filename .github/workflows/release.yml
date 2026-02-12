@@ -50,11 +50,14 @@ jobs:
         with:
           path: prebuilds-downloaded
 
-      - name: List downloaded files
-        run: find prebuilds-downloaded -type f
+      - name: Flatten prebuilds for release
+        run: |
+          mkdir -p release-binaries
+          find prebuilds-downloaded -name '*.node' -exec cp {} release-binaries/ \;
+          ls -lh release-binaries/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: prebuilds-downloaded/**/prebuilds/**/*.node
+          files: release-binaries/*.node
           generate_release_notes: true
