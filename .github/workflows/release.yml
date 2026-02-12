@@ -5,9 +5,6 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: write
-
 jobs:
   build:
     name: Build (${{ matrix.os }})
@@ -36,26 +33,3 @@ jobs:
         with:
           name: prebuilds-${{ matrix.os }}
           path: prebuilds/
-
-  release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-22.04
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all prebuilds
-        uses: actions/download-artifact@v4
-        with:
-          path: prebuilds/
-          merge-multiple: true
-
-      - name: List prebuilds
-        run: ls -R prebuilds/
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: prebuilds/**/*.node
-          generate_release_notes: true
