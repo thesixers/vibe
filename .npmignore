@@ -1,9 +1,8 @@
 # Dependencies
 node_modules/
 
-# Build artifacts
+# Build artifacts (local compilation)
 build/
-*.node
 
 # Tests
 tests/

@@ -16,7 +16,8 @@
     "vibe.d.ts",
     "utils/",
     "native/",
-    "binding.gyp"
+    "binding.gyp",
+    "prebuilds/"
   ],
   "scripts": {
     "test": "node tests/unit.test.js && node tests/live.test.js",
@@ -24,7 +25,7 @@
     "benchmark": "node tests/full-benchmark.js",
     "start": "node server.js",
     "build:native": "node-gyp rebuild",
-    "install": "prebuild-install",
+    "prebuildify": "prebuildify --napi --strip",
     "clean": "node-gyp clean"
   },
   "keywords": [
@@ -45,20 +46,14 @@
   "dependencies": {
     "busboy": "^1.6.0",
     "node-addon-api": "^7.1.1",
-    "node-gyp-build": "^4.8.4",
-    "prebuild-install": "^7.1.3"
+    "node-gyp-build": "^4.8.4"
   },
-  "optionalDependencies": {
+  "devDependencies": {
+    "prebuildify": "^6.0.1",
     "node-gyp": "^10.3.1"
   },
   "engines": {
     "node": ">=18"
   },
-  "gypfile": true,
-  "binary": {
-    "napi_versions": [
-      3
-    ],
-    "host": "https://github.com/genesix/vibe/releases/download/"
-  }
+  "gypfile": false
 }

@@ -247,13 +247,11 @@ Vibe supports multipart file uploads with built-in validation.
 
 ```javascript
 app.post("/upload", { media: { dest: "uploads" } }, (req) => {
->>>>>>> cpp-optimization
   return { files: req.files, body: req.body };
 });
 ```
 
 ### Media Options
->>>>>>> cpp-optimization
 
 ```javascript
 app.post(
@@ -419,7 +417,6 @@ Built-in protections:
 
 Set `NODE_ENV=production` for secure error handling (stack traces hidden).
 
->>>>>>> cpp-optimization
 ---
 
 ### Interceptors (Middleware)
