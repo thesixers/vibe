@@ -50,8 +50,11 @@ jobs:
         with:
           path: prebuilds-downloaded
 
+      - name: List downloaded files
+        run: find prebuilds-downloaded -type f
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: prebuilds-downloaded/**/*.node
+          files: prebuilds-downloaded/**/prebuilds/**/*.node
           generate_release_notes: true
