@@ -50,22 +50,28 @@ jobs:
         with:
           path: prebuilds-downloaded
 
-      - name: Prepare binaries for release
+      - name: Debug - List all files
+        run: |
+          echo "=== Directory structure ==="
+          find prebuilds-downloaded -type f
+          echo "=== .node files ==="
+          find prebuilds-downloaded -name "*.node"
+
+      - name: Extract and rename binaries
         run: |
           mkdir -p release-binaries
 
-          # Find and copy binaries with platform-specific names
-          for dir in prebuilds-downloaded/prebuilds-*/prebuilds/*; do
-            if [ -d "$dir" ]; then
-              platform=$(basename "$dir")
-              for file in "$dir"/*.node; do
-                if [ -f "$file" ]; then
-                  cp "$file" "release-binaries/vibe-gx-${platform}.node"
-                fi
-              done
+          # Use find to locate all .node files
+          find prebuilds-downloaded -name "*.node" | while read -r file; do
+            # Extract platform from path (e.g., linux-x64, darwin-arm64)
+            platform=$(echo "$file" | grep -oP 'prebuilds/\K[^/]+(?=/)')
+            if [ -n "$platform" ]; then
+              echo "Copying $file -> release-binaries/vibe-gx-${platform}.node"
+              cp "$file" "release-binaries/vibe-gx-${platform}.node"
             fi
           done
 
+          echo "=== Final binaries ==="
           ls -lh release-binaries/
 
       - name: Create GitHub Release
