@@ -1,4 +1,4 @@
-name: Build & Publish
+name: Build Prebuilds
 
 on:
   push:
@@ -37,23 +37,13 @@ jobs:
           name: prebuilds-${{ matrix.os }}
           path: prebuilds/
 
-  publish:
-    name: Publish to npm
+  release:
+    name: Create Release
     needs: build
     runs-on: ubuntu-22.04
-    if: github.ref_type == 'tag' && contains(github.ref, 'refs/tags/v') && github.event.base_ref == 'refs/heads/main' || github.event.repository.default_branch == 'main'
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Use Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: "https://registry.npmjs.org"
-
-      - name: Install dependencies
-        run: npm install --ignore-scripts
 
       - name: Download all prebuilds
         uses: actions/download-artifact@v4
@@ -64,7 +54,8 @@ jobs:
       - name: List prebuilds
         run: ls -R prebuilds/
 
-      - name: Publish to npm
-        run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: prebuilds/**/*.node
+          generate_release_notes: true
