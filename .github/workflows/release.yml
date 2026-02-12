@@ -50,10 +50,22 @@ jobs:
         with:
           path: prebuilds-downloaded
 
-      - name: Flatten prebuilds for release
+      - name: Prepare binaries for release
         run: |
           mkdir -p release-binaries
-          find prebuilds-downloaded -name '*.node' -exec cp {} release-binaries/ \;
+
+          # Find and copy binaries with platform-specific names
+          for dir in prebuilds-downloaded/prebuilds-*/prebuilds/*; do
+            if [ -d "$dir" ]; then
+              platform=$(basename "$dir")
+              for file in "$dir"/*.node; do
+                if [ -f "$file" ]; then
+                  cp "$file" "release-binaries/vibe-gx-${platform}.node"
+                fi
+              done
+            fi
+          done
+
           ls -lh release-binaries/
 
       - name: Create GitHub Release
