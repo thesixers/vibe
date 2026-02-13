@@ -32,6 +32,20 @@ export default function bodyParser(req, res, media = {}, options = {}) {
 
     /* ---------- Multipart / File Uploads ---------- */
     if (contentType.includes("multipart/form-data")) {
+      // SECURITY: Only allow file uploads if media config is explicitly set
+      // This prevents attackers from uploading files to routes that don't expect them
+      if (!media || Object.keys(media).length === 0) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: "Bad Request",
+            message: "File uploads not allowed on this route",
+          }),
+        );
+        return reject(
+          new Error("File upload attempted without media configuration"),
+        );
+      }
       parseMultipart(req, res, media, options, resolve, reject);
       return;
     }
@@ -235,11 +249,11 @@ function parseMultipart(req, res, media, options, resolve, reject) {
  */
 function parseJson(req, res, media, options, resolve, reject) {
   const limit = options.maxJsonSize || 1e6;
-  const streamThreshold = media.streamThreshold || DEFAULT_STREAM_THRESHOLD;
+  const streamThreshold = media?.streamThreshold || DEFAULT_STREAM_THRESHOLD;
   const contentLength = parseInt(req.headers["content-length"] || "0", 10);
 
   // STREAMING MODE: For very large JSON, let handler process incrementally
-  if (media.streaming && contentLength > streamThreshold) {
+  if (media?.streaming && contentLength > streamThreshold) {
     req.body = null; // Signal that body should be consumed via stream
     req.emit("jsonStream", req);
     resolve();

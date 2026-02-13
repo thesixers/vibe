@@ -223,8 +223,16 @@ Extend app, request, or response with custom properties:
 // App decorator - shared config
 app.decorate("config", { env: "production", version: "1.0.0" });
 
-// Access via app.decorators.config
+// Access via app.decorators in main app
 app.get("/version", () => ({ version: app.decorators.config.version }));
+
+// In plugins, decorators are spread directly (no .decorators)
+app.register(
+  async (api) => {
+    api.get("/env", () => ({ env: api.config.env })); // Direct access
+  },
+  { prefix: "/api" },
+);
 
 // Request decorator - add to all requests
 app.decorateRequest("timestamp", () => Date.now());
@@ -241,19 +249,19 @@ app.decorateReply("sendSuccess", function (data) {
 
 ## 📂 File Uploads
 
-Vibe supports multipart file uploads with built-in validation.
+Vibe supports multipart file uploads with built-in validation and security.
+
+> **🔒 Security**: File uploads are **disabled by default**. You must explicitly configure `media` options to accept uploads.
 
 ### Basic Upload
 
 ```javascript
 app.post("/upload", { media: { dest: "uploads" } }, (req) => {
->>>>>>> cpp-optimization
   return { files: req.files, body: req.body };
 });
 ```
 
 ### Media Options
->>>>>>> cpp-optimization
 
 ```javascript
 app.post(
@@ -408,61 +416,77 @@ app.plugin(adapt(compression()));
 
 Built-in protections:
 
-| Feature                                 | Status |
-| :-------------------------------------- | :----: |
-| Path traversal protection               |   ✅   |
-| File type validation                    |   ✅   |
-| Body size limits (1MB JSON, 10MB files) |   ✅   |
-| Error sanitization (production mode)    |   ✅   |
-| Safe filename generation                |   ✅   |
-| Port validation                         |   ✅   |
+| Feature                                  | Status |
+| :--------------------------------------- | :----: |
+| **File upload protection** (opt-in only) |   ✅   |
+| Path traversal protection                |   ✅   |
+| File type validation                     |   ✅   |
+| Body size limits (1MB JSON, 10MB files)  |   ✅   |
+| Error sanitization (production mode)     |   ✅   |
+| Safe filename generation                 |   ✅   |
+| Port validation                          |   ✅   |
 
-Set `NODE_ENV=production` for secure error handling (stack traces hidden).
+### File Upload Security
 
->>>>>>> cpp-optimization
----
-
-### Interceptors (Middleware)
-
-Interceptors run before your handler. Return `false` to stop execution.
-
-#### Single Interceptor
+Routes **reject multipart uploads by default** unless `media` is explicitly configured:
 
 ```javascript
-const authCheck = (req, res) => {
-  if (!req.headers.authorization) {
-    res.unauthorized("Token required");
-    return false;
-  }
-  req.user = { id: 1 };
-  return true;
-};
+// ❌ This will reject file uploads with 400 Bad Request
+app.post("/api/data", (req) => ({ data: req.body }));
 
-app.get("/protected", { intercept: authCheck }, (req) => {
-  return { user: req.user };
-});
-```
-
-#### Multiple Interceptors
-
-```javascript
-app.get(
-  "/admin",
+// ✅ This accepts file uploads (explicit opt-in)
+app.post(
+  "/upload",
   {
-    intercept: [authCheck, adminCheck, rateLimiter],
+    media: {
+      dest: "uploads",
+      maxSize: 5 * 1024 * 1024,
+      allowedTypes: ["image/*", "application/pdf"],
+    },
   },
   handler,
 );
 ```
 
-#### Global Interceptors
+This prevents attackers from uploading malicious files to unintended routes.
+
+Set `NODE_ENV=production` for secure error handling (stack traces hidden).
+
+---
+
+## ⚡ Schema-Based Serialization
+
+**Optional** performance boost: Pre-compile JSON serializers for 2-3x faster responses.
 
 ```javascript
-// Applies to ALL routes
-app.plugin((req, res) => {
-  console.log(`${req.method} ${req.url}`);
-});
+app.get(
+  "/users/:id",
+  {
+    schema: {
+      response: {
+        type: "object",
+        properties: {
+          id: { type: "number" },
+          name: { type: "string" },
+          email: { type: "string" },
+          active: { type: "boolean" },
+        },
+      },
+    },
+  },
+  async (req) => {
+    const user = await db.getUser(req.params.id);
+    return user; // Uses pre-compiled serializer (2-3x faster than JSON.stringify)
+  },
+);
 ```
+
+**Benefits:**
+
+- ✅ 2-3x faster JSON serialization
+- ✅ No `Object.keys()` enumeration
+- ✅ Zero runtime type checking
+- ✅ Completely optional (routes work without schemas)
 
 ---
 

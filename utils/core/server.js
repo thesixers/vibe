@@ -7,9 +7,9 @@ import {
   matchPath,
 } from "./handler.js";
 import bodyParser from "./parser.js";
-import responseMethods from "./response.js";
+import { installResponseMethods, initResponse } from "./response.js";
 import dns from "node:dns/promises";
-import { parseQuery as nativeParseQuery, isNativeEnabled } from "../native.js";
+import { parseQuery } from "../native.js";
 
 // Pre-allocated 404 response
 const NOT_FOUND_BODY = "Not Found";
@@ -19,6 +19,9 @@ const NOT_FOUND_BODY = "Not Found";
  * HEAVILY OPTIMIZED for performance
  */
 async function server(options, port, host, callback) {
+  // Install response methods on prototype ONCE (zero per-request cost)
+  installResponseMethods(http.ServerResponse);
+
   // Pre-compute everything we can
   const useTrieMatching = options.routeCount > options.trieThreshold;
   const staticRoutes = options.staticRoutes || new Map();
@@ -77,24 +80,22 @@ async function server(options, port, host, callback) {
     const qIdx = url.indexOf("?");
     const pathname = qIdx < 0 ? url : url.slice(0, qIdx);
 
-    // Lazy query (getter) - uses native C++ when available
+    // Lazy query via Object.defineProperty (replaces deprecated __defineGetter__)
     let _query;
-    req.__defineGetter__("query", function () {
-      if (_query === undefined) {
-        if (qIdx < 0) {
-          _query = {};
-        } else {
-          // Use native parser if available
-          _query = nativeParseQuery(url.slice(qIdx + 1));
+    Object.defineProperty(req, "query", {
+      get() {
+        if (_query === undefined) {
+          _query = qIdx < 0 ? {} : parseQuery(url.slice(qIdx + 1));
         }
-      }
-      return _query;
+        return _query;
+      },
+      configurable: true,
     });
 
     req.url = pathname;
 
-    // Extend response
-    responseMethods(res, options);
+    // Stamp response with options ref (ONLY per-request cost for response methods)
+    initResponse(res, options);
 
     // Apply decorators (only if exist)
     if (requestDecoratorEntries) {
@@ -110,7 +111,57 @@ async function server(options, port, host, callback) {
       }
     }
 
-    // Main async handler
+    // SYNC FAST PATH — avoid async/await for simple GET routes
+    if (!hasInterceptors && req.method === "GET") {
+      const routeKey = "GET" + pathname;
+      const staticMatch = staticRoutes.get(routeKey);
+
+      if (staticMatch && !staticMatch.intercept) {
+        const { handler, serialize } = staticMatch;
+        req.params = {};
+
+        try {
+          if (typeof handler === "function") {
+            const result = handler(req, res);
+            // Check if handler returned a Promise (async handler)
+            if (result !== undefined && !res.writableEnded) {
+              if (result && typeof result.then === "function") {
+                // Async handler — fall through to async path
+                result
+                  .then((val) => {
+                    if (val !== undefined && !res.writableEnded) {
+                      if (serialize) {
+                        res.setHeader("Content-Type", "application/json");
+                        res.end(serialize(val));
+                      } else {
+                        res.json(val);
+                      }
+                    }
+                  })
+                  .catch((err) => handleError(err, req, res));
+              } else if (serialize) {
+                res.setHeader("Content-Type", "application/json");
+                res.end(serialize(result));
+              } else {
+                res.json(result);
+              }
+            }
+          } else if (isSendAble(handler)) {
+            if (serialize && typeof handler === "object" && handler !== null) {
+              res.setHeader("Content-Type", "application/json");
+              res.end(serialize(handler));
+            } else {
+              res.send(handler);
+            }
+          }
+        } catch (err) {
+          handleError(err, req, res);
+        }
+        return;
+      }
+    }
+
+    // Fallback to full async handler for complex routes
     handleRequest(req, res, pathname);
   }
 
@@ -145,7 +196,7 @@ async function server(options, port, host, callback) {
     }
 
     const { route, params } = match;
-    const { handler, intercept, media } = route;
+    const { handler, intercept, media, serialize } = route;
 
     try {
       // Body parsing (only for non-GET with body)
@@ -165,10 +216,21 @@ async function server(options, port, host, callback) {
       if (typeof handler === "function") {
         const result = await handler(req, res);
         if (result !== undefined && !res.writableEnded) {
-          res.json(result);
+          if (serialize) {
+            // Pre-compiled schema serializer — fastest path
+            res.setHeader("Content-Type", "application/json");
+            res.end(serialize(result));
+          } else {
+            res.json(result);
+          }
         }
       } else if (isSendAble(handler)) {
-        res.send(handler);
+        if (serialize && typeof handler === "object" && handler !== null) {
+          res.setHeader("Content-Type", "application/json");
+          res.end(serialize(handler));
+        } else {
+          res.send(handler);
+        }
       } else {
         throw new Error("Invalid handler type");
       }

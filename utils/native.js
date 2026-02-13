@@ -1,76 +1,23 @@
 /**
- * Native Module Wrapper
- *
- * Attempts to load the C++ native module for performance.
- * Falls back to pure JavaScript implementations if native module is unavailable.
+ * Pure JavaScript implementations for JSON stringify, URL parsing,
+ * query string parsing, and URI decoding.
  */
 
-import { createRequire } from "module";
-import { fileURLToPath } from "url";
-import path from "path";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-let native = null;
-let useNative = false;
-
-// Try to load native module using createRequire for ESM compatibility
-try {
-  const require = createRequire(import.meta.url);
-  const nativePath = path.join(
-    __dirname,
-    "..",
-    "build",
-    "Release",
-    "vibe_native.node",
-  );
-  native = require(nativePath);
-  useNative = true;
-  console.log("[VIBE] Native module loaded (C++ optimizations enabled)");
-} catch (err) {
-  // Native module not available, use JS fallback
-  console.log(
-    "[VIBE] Native module not available, using JavaScript implementation",
-  );
-}
-
 /**
- * Fast JSON stringify
- * Uses native C++ implementation if available
- *
+ * Fast JSON stringify (pure JS)
  * @param {any} value - Value to stringify
  * @returns {string} JSON string
  */
 export function stringify(value) {
-  if (useNative) {
-    try {
-      return native.stringify(value);
-    } catch {
-      // Fallback on error
-      return JSON.stringify(value);
-    }
-  }
   return JSON.stringify(value);
 }
 
 /**
  * Parse URL into pathname and query object
- * Uses native C++ implementation if available
- *
  * @param {string} url - URL to parse
  * @returns {{ pathname: string, query: Object }}
  */
 export function parseUrl(url) {
-  if (useNative) {
-    try {
-      return native.parseUrl(url);
-    } catch {
-      // Fallback
-    }
-  }
-
-  // JavaScript fallback
   const qIdx = url.indexOf("?");
   if (qIdx < 0) {
     return { pathname: url, query: {} };
@@ -83,25 +30,13 @@ export function parseUrl(url) {
 
 /**
  * Parse query string into object
- * Uses native C++ implementation if available
- *
  * @param {string} queryString - Query string (with or without leading ?)
  * @returns {Object} Parsed query parameters
  */
 export function parseQuery(queryString) {
-  if (useNative) {
-    try {
-      return native.parseQuery(queryString);
-    } catch {
-      // Fallback
-    }
-  }
-
-  // JavaScript fallback
   const query = {};
   if (!queryString) return query;
 
-  // Remove leading ?
   let qs = queryString;
   if (qs[0] === "?") {
     qs = qs.slice(1);
@@ -127,28 +62,19 @@ export function parseQuery(queryString) {
 
 /**
  * Decode URI component
- * Uses native C++ implementation if available
- *
  * @param {string} encoded - Encoded string
  * @returns {string} Decoded string
  */
 export function decodeURI(encoded) {
-  if (useNative) {
-    try {
-      return native.decodeURI(encoded);
-    } catch {
-      // Fallback
-    }
-  }
   return decodeURIComponent(encoded);
 }
 
 /**
- * Check if native module is loaded
+ * Check if native module is loaded (always false now)
  * @returns {boolean}
  */
 export function isNativeEnabled() {
-  return useNative;
+  return false;
 }
 
 /**
@@ -156,7 +82,7 @@ export function isNativeEnabled() {
  * @returns {string|null}
  */
 export function getNativeVersion() {
-  return useNative ? native.version : null;
+  return null;
 }
 
 export default {

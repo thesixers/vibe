@@ -3,6 +3,7 @@ import { adapt } from "./utils/helpers/adapt.js";
 import { color } from "./utils/helpers/colors.js";
 import { RouteTrie } from "./utils/core/trie.js";
 import { PathToRegex } from "./utils/core/handler.js";
+import { compileSerializer } from "./utils/core/compile-serializer.js";
 
 /**
  * Helper to generate regex for a path
@@ -195,12 +196,8 @@ const vibe = () => {
       pathRegex: null,
       handler: null,
       intercept: null,
-      media: {
-        public: true,
-        dest: null,
-        maxSize: 10 * 1024 * 1024,
-        allowedTypes: null,
-      },
+      serialize: null,
+      media: null, // Only set when explicitly configured
     };
 
     // Handle overriding root route
@@ -212,7 +209,18 @@ const vibe = () => {
         route.intercept = opts.intercept
           ? wrapIntercepts(opts.intercept)
           : null;
-        route.media = { ...route.media, ...opts.media };
+        if (opts.media) {
+          route.media = {
+            public: true,
+            dest: null,
+            maxSize: 10 * 1024 * 1024,
+            allowedTypes: null,
+            ...opts.media,
+          };
+        }
+        if (opts.schema?.response) {
+          route.serialize = compileSerializer(opts.schema.response);
+        }
         route.handler = handler;
       } else {
         route.handler = opts;
@@ -238,7 +246,18 @@ const vibe = () => {
         throw new Error("Options must be an object when using 3-arg form");
       }
       route.intercept = opts.intercept ? wrapIntercepts(opts.intercept) : null;
-      route.media = { ...route.media, ...opts.media };
+      if (opts.media) {
+        route.media = {
+          public: true,
+          dest: null,
+          maxSize: 10 * 1024 * 1024,
+          allowedTypes: null,
+          ...opts.media,
+        };
+      }
+      if (opts.schema?.response) {
+        route.serialize = compileSerializer(opts.schema.response);
+      }
       route.handler = handler;
     } else {
       route.handler = opts;

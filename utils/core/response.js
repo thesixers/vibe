@@ -1,14 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { mimeTypes } from "../helpers/mime.js";
-import { stringify as nativeStringify, isNativeEnabled } from "../native.js";
 
-// Pre-computed headers for performance
-const JSON_HEADERS = { "Content-Type": "application/json" };
-const TEXT_HEADERS = { "Content-Type": "text/plain" };
-const HTML_HEADERS = { "Content-Type": "text/html" };
-
-// Pre-allocated response templates
+// Pre-allocated response templates (stringified once at startup)
 const RESPONSES = {
   notFound: JSON.stringify({ success: false, message: "Resource not found" }),
   unauthorized: JSON.stringify({ success: false, message: "Unauthorized" }),
@@ -22,141 +16,114 @@ const RESPONSES = {
 };
 
 /**
- * Fast JSON stringify - uses native C++ when available
- * @param {any} data
- * @returns {string}
+ * Vibe response methods mixin.
+ * These are added to ServerResponse.prototype ONCE at server startup,
+ * avoiding per-request closure allocations.
  */
-function fastStringify(data) {
-  // Use native C++ stringify if available
-  if (isNativeEnabled()) {
-    return nativeStringify(data);
-  }
-
-  // JavaScript fallback
-  if (data == null) return "null";
-
-  const type = typeof data;
-  if (type === "string") return JSON.stringify(data);
-  if (type === "number" || type === "boolean") return String(data);
-
-  return JSON.stringify(data);
-}
-
-/**
- * Extends the native ServerResponse with helper methods.
- * Optimized for performance with pre-computed headers and fast JSON.
- *
- * @param {import("http").ServerResponse} res
- * @param {Object} options
- * @param {string} options.publicFolder
- */
-export default function responseMethods(res, options) {
-  // Cache headers reference for faster access
-  const setHeader = res.setHeader.bind(res);
-  const endResponse = res.end.bind(res);
-
+const vibeResponseMethods = {
   /**
-   * Sends a response. Optimized fast path for JSON.
+   * Sends a response. Fast path for JSON objects.
    * @param {any} data
    */
-  res.send = (data) => {
+  send(data) {
     if (data === undefined) {
       throw new Error("Response data is not a sendable data type");
     }
 
     if (typeof data === "object" && data !== null) {
-      setHeader("Content-Type", "application/json");
-      endResponse(fastStringify(data));
+      this.setHeader("Content-Type", "application/json");
+      this.end(JSON.stringify(data));
       return;
     }
 
-    setHeader("Content-Type", "text/plain");
-    endResponse(String(data));
-  };
+    this.setHeader("Content-Type", "text/plain");
+    this.end(String(data));
+  },
 
   /**
-   * Sends a JSON response. Fast path.
+   * Sends a JSON response.
    * @param {Object} data
    */
-  res.json = (data) => {
-    setHeader("Content-Type", "application/json");
-    endResponse(fastStringify(data));
-  };
+  json(data) {
+    this.setHeader("Content-Type", "application/json");
+    this.end(JSON.stringify(data));
+  },
 
   /**
-   * Sets HTTP status code.
+   * Sets HTTP status code. Chainable.
    * @param {number} code
-   * @returns {import("http").ServerResponse}
+   * @returns {this}
    */
-  res.status = (code) => {
-    res.statusCode = code;
-    return res;
-  };
+  status(code) {
+    this.statusCode = code;
+    return this;
+  },
 
   /**
    * Safely send an HTML file from the public folder.
    * @param {string} filename
    */
-  res.sendHtml = (filename) => {
-    if (!options.publicFolder) throw new Error("No Public folder set");
+  sendHtml(filename) {
+    const publicFolder = this._vibeOptions.publicFolder;
+    if (!publicFolder) throw new Error("No Public folder set");
 
-    const resolvedPath = path.resolve(options.publicFolder, filename);
+    const resolvedPath = path.resolve(publicFolder, filename);
 
-    if (!resolvedPath.startsWith(path.resolve(options.publicFolder))) {
-      res.statusCode = 403;
-      return endResponse("Forbidden");
+    if (!resolvedPath.startsWith(path.resolve(publicFolder))) {
+      this.statusCode = 403;
+      return this.end("Forbidden");
     }
 
     if (!fs.existsSync(resolvedPath)) {
-      res.statusCode = 404;
-      return endResponse("Not Found");
+      this.statusCode = 404;
+      return this.end("Not Found");
     }
 
-    res.writeHead(200, HTML_HEADERS);
-    fs.createReadStream(resolvedPath).pipe(res);
-  };
+    this.writeHead(200, { "Content-Type": "text/html" });
+    fs.createReadStream(resolvedPath).pipe(this);
+  },
 
   /**
    * Safely send any static file from the public folder.
    * @param {string} filePath
    */
-  res.sendFile = (filePath) => {
-    if (!options.publicFolder) throw new Error("No Public folder set");
+  sendFile(filePath) {
+    const publicFolder = this._vibeOptions.publicFolder;
+    if (!publicFolder) throw new Error("No Public folder set");
 
-    const resolvedPath = path.resolve(options.publicFolder, filePath);
+    const resolvedPath = path.resolve(publicFolder, filePath);
 
-    if (!resolvedPath.startsWith(path.resolve(options.publicFolder))) {
-      res.statusCode = 403;
-      return endResponse("Forbidden");
+    if (!resolvedPath.startsWith(path.resolve(publicFolder))) {
+      this.statusCode = 403;
+      return this.end("Forbidden");
     }
 
     if (!fs.existsSync(resolvedPath)) {
-      res.statusCode = 404;
-      return endResponse("Not Found");
+      this.statusCode = 404;
+      return this.end("Not Found");
     }
 
     const ext = path.extname(resolvedPath);
-    res.writeHead(200, {
+    this.writeHead(200, {
       "Content-Type": mimeTypes[ext] || "application/octet-stream",
     });
 
-    fs.createReadStream(resolvedPath).pipe(res);
-  };
+    fs.createReadStream(resolvedPath).pipe(this);
+  },
 
   /**
    * Send any file from an absolute path (not restricted to public folder).
-   * Use with caution - ensure you validate the path yourself.
    * @param {string} absolutePath - Full path to the file
    * @param {object} [opts] - Options
-   * @param {boolean} [opts.download=false] - Force download with Content-Disposition
+   * @param {boolean} [opts.download=false] - Force download
    * @param {string} [opts.filename] - Custom filename for download
    */
-  res.sendAbsoluteFile = (absolutePath, opts = {}) => {
+  sendAbsoluteFile(absolutePath, opts = {}) {
     const resolvedPath = path.resolve(absolutePath);
 
     if (!fs.existsSync(resolvedPath)) {
-      res.statusCode = 404;
-      return endResponse("Not Found");
+      this.statusCode = 404;
+      return this.end("Not Found");
     }
 
     const ext = path.extname(resolvedPath);
@@ -169,118 +136,153 @@ export default function responseMethods(res, options) {
       headers["Content-Disposition"] = `attachment; filename="${filename}"`;
     }
 
-    res.writeHead(200, headers);
-    fs.createReadStream(resolvedPath).pipe(res);
-  };
+    this.writeHead(200, headers);
+    fs.createReadStream(resolvedPath).pipe(this);
+  },
 
   /**
    * Sends a 200 OK success response.
    * @param {any} data
    * @param {string} message
    */
-  res.success = (data = null, message = "Success") => {
-    res.statusCode = 200;
-    setHeader("Content-Type", "application/json");
-    endResponse(fastStringify({ success: true, message, data }));
-  };
+  success(data = null, message = "Success") {
+    this.statusCode = 200;
+    this.setHeader("Content-Type", "application/json");
+    this.end(JSON.stringify({ success: true, message, data }));
+  },
 
   /**
    * Sends a 201 Created response.
    * @param {any} data
    * @param {string} message
    */
-  res.created = (data = null, message = "Resource created") => {
-    res.statusCode = 201;
-    setHeader("Content-Type", "application/json");
-    endResponse(fastStringify({ success: true, message, data }));
-  };
+  created(data = null, message = "Resource created") {
+    this.statusCode = 201;
+    this.setHeader("Content-Type", "application/json");
+    this.end(JSON.stringify({ success: true, message, data }));
+  },
 
   /**
    * Sends a 400 Bad Request response.
    * @param {string} message
    * @param {any} errors
    */
-  res.badRequest = (message = "Bad Request", errors = null) => {
-    res.statusCode = 400;
-    setHeader("Content-Type", "application/json");
-    endResponse(
+  badRequest(message = "Bad Request", errors = null) {
+    this.statusCode = 400;
+    this.setHeader("Content-Type", "application/json");
+    this.end(
       errors
-        ? fastStringify({ success: false, message, errors })
+        ? JSON.stringify({ success: false, message, errors })
         : RESPONSES.badRequest,
     );
-  };
+  },
 
   /**
    * Sends a 401 Unauthorized response.
    * @param {string} message
    */
-  res.unauthorized = (message) => {
-    res.statusCode = 401;
-    setHeader("Content-Type", "application/json");
-    endResponse(
+  unauthorized(message) {
+    this.statusCode = 401;
+    this.setHeader("Content-Type", "application/json");
+    this.end(
       message
-        ? fastStringify({ success: false, message })
+        ? JSON.stringify({ success: false, message })
         : RESPONSES.unauthorized,
     );
-  };
+  },
 
   /**
    * Sends a 403 Forbidden response.
    * @param {string} message
    */
-  res.forbidden = (message) => {
-    res.statusCode = 403;
-    setHeader("Content-Type", "application/json");
-    endResponse(
+  forbidden(message) {
+    this.statusCode = 403;
+    this.setHeader("Content-Type", "application/json");
+    this.end(
       message
-        ? fastStringify({ success: false, message })
+        ? JSON.stringify({ success: false, message })
         : RESPONSES.forbidden,
     );
-  };
+  },
 
   /**
    * Sends a 404 Not Found response.
    * @param {string} message
    */
-  res.notFound = (message) => {
-    res.statusCode = 404;
-    setHeader("Content-Type", "application/json");
-    endResponse(
-      message ? fastStringify({ success: false, message }) : RESPONSES.notFound,
+  notFound(message) {
+    this.statusCode = 404;
+    this.setHeader("Content-Type", "application/json");
+    this.end(
+      message
+        ? JSON.stringify({ success: false, message })
+        : RESPONSES.notFound,
     );
-  };
+  },
 
   /**
    * Sends a 409 Conflict response.
    * @param {string} message
    */
-  res.conflict = (message) => {
-    res.statusCode = 409;
-    setHeader("Content-Type", "application/json");
-    endResponse(
-      message ? fastStringify({ success: false, message }) : RESPONSES.conflict,
+  conflict(message) {
+    this.statusCode = 409;
+    this.setHeader("Content-Type", "application/json");
+    this.end(
+      message
+        ? JSON.stringify({ success: false, message })
+        : RESPONSES.conflict,
     );
-  };
+  },
 
   /**
    * Sends a 500 Internal Server Error response.
    * @param {Error} error
    */
-  res.serverError = (error) => {
+  serverError(error) {
     console.error(error);
-    res.statusCode = 500;
-    setHeader("Content-Type", "application/json");
-    endResponse(RESPONSES.serverError);
-  };
+    this.statusCode = 500;
+    this.setHeader("Content-Type", "application/json");
+    this.end(RESPONSES.serverError);
+  },
 
   /**
    * Redirects the client to another URL.
    * @param {string} url
    * @param {number} [status=302]
    */
-  res.redirect = (url, status = 302) => {
-    res.statusCode = status;
-    setHeader("Location", url);
-    endResponse();
-  };
+  redirect(url, status = 302) {
+    this.statusCode = status;
+    this.setHeader("Location", url);
+    this.end();
+  },
+};
+
+/**
+ * Installs Vibe response methods onto the ServerResponse prototype.
+ * Called ONCE at server startup — zero per-request cost.
+ *
+ * @param {typeof import("http").ServerResponse} ResponseProto
+ */
+export function installResponseMethods(ResponseProto) {
+  const proto = ResponseProto.prototype;
+  for (const [name, fn] of Object.entries(vibeResponseMethods)) {
+    if (!(name in proto)) {
+      proto[name] = fn;
+    }
+  }
+}
+
+/**
+ * Stamps a single res object with the options ref.
+ * This is the ONLY per-request work we need to do.
+ *
+ * @param {import("http").ServerResponse} res
+ * @param {Object} options
+ */
+export function initResponse(res, options) {
+  res._vibeOptions = options;
+}
+
+// Keep default export for backwards compatibility
+export default function responseMethods(res, options) {
+  initResponse(res, options);
 }
