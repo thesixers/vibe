@@ -1,6 +1,6 @@
 {
   "name": "vibe-gx",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "A lightweight, high-performance Node.js web framework.",
   "type": "module",
   "main": "vibe.js",
