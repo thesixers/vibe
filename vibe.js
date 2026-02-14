@@ -492,6 +492,8 @@ const vibe = () => {
       media: { public: true, dest: null },
     };
     trie.insert("GET", routePath, route);
+    routes.push(route);
+    options.routeCount++;
   }
 
   /**
