@@ -474,6 +474,7 @@ const vibe = () => {
     const route = {
       method: "GET",
       path: routePath,
+      pathRegex: pathToRegex(routePath),
       handler: (req, res) => {
         try {
           const filePath = req.url

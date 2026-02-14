@@ -269,13 +269,49 @@ app.post(
   {
     media: {
       dest: "uploads", // Subfolder destination
-      public: true, // Save inside public folder (default: true)
+      public: true, // Save in public folder (default: true)
       maxSize: 5 * 1024 * 1024, // Max file size: 5MB
       allowedTypes: ["image/jpeg", "image/png", "image/*"], // Wildcards supported
     },
   },
   handler,
 );
+```
+
+### Public vs Private Uploads
+
+**Public uploads** (web-accessible):
+
+```javascript
+app.post(
+  "/upload/avatar",
+  {
+    media: {
+      public: true, // ✅ Files accessible via HTTP
+      dest: "avatars", // Saved to: public/avatars/
+    },
+  },
+  handler,
+);
+
+// Files accessible at: http://yourapp.com/avatars/filename.jpg
+```
+
+**Private uploads** (server-only access):
+
+```javascript
+app.post(
+  "/upload/documents",
+  {
+    media: {
+      public: false, // 🔒 Files NOT web-accessible
+      dest: "documents", // Saved to: private/documents/
+    },
+  },
+  handler,
+);
+
+// Files only accessible via your backend code (e.g., sendAbsoluteFile)
 ```
 
 ### Uploaded File Object
