@@ -52,6 +52,62 @@ export interface MediaOptions {
 }
 
 /**
+ * JSON Schema property definition for schema-based serialization.
+ */
+export interface JsonSchemaProperty {
+  /** The type of the property */
+  type:
+    | "string"
+    | "number"
+    | "integer"
+    | "boolean"
+    | "object"
+    | "array"
+    | "null";
+  /** Nested properties (for type: "object") */
+  properties?: Record<string, JsonSchemaProperty>;
+  /** Item schema (for type: "array") */
+  items?: JsonSchemaProperty;
+}
+
+/**
+ * JSON Schema definition for response serialization.
+ *
+ * @example
+ * {
+ *   type: "object",
+ *   properties: {
+ *     id: { type: "number" },
+ *     name: { type: "string" },
+ *     active: { type: "boolean" }
+ *   }
+ * }
+ */
+export interface JsonSchema extends JsonSchemaProperty {
+  type: "object" | "array";
+}
+
+/**
+ * Schema options for a route.
+ * Used for pre-compiled response serialization (2-3x faster than JSON.stringify).
+ *
+ * @example
+ * {
+ *   response: {
+ *     type: "object",
+ *     properties: {
+ *       id: { type: "number" },
+ *       name: { type: "string" }
+ *     }
+ *   }
+ * }
+ */
+export interface SchemaOptions {
+  /** Response schema for pre-compiled JSON serialization */
+  response?: JsonSchema;
+}
+
+/**
  * Options for registering a route.
  *
  * @example
@@ -88,6 +144,22 @@ export interface RouteOptions {
    * Files will be available in req.files array.
    */
   media?: MediaOptions;
+  /**
+   * JSON Schema for pre-compiled response serialization.
+   * Generates a zero-overhead serializer at route registration time.
+   *
+   * @example
+   * schema: {
+   *   response: {
+   *     type: "object",
+   *     properties: {
+   *       id: { type: "number" },
+   *       name: { type: "string" }
+   *     }
+   *   }
+   * }
+   */
+  schema?: SchemaOptions;
 }
 
 /**

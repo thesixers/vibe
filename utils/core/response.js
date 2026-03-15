@@ -2,6 +2,11 @@ import fs from "fs";
 import path from "path";
 import { mimeTypes } from "../helpers/mime.js";
 
+// Pre-allocated headers (avoid per-request object creation)
+const JSON_CT = { "content-type": "application/json" };
+const TEXT_CT = { "content-type": "text/plain" };
+const HTML_CT = { "Content-Type": "text/html" };
+
 // Pre-allocated response templates (stringified once at startup)
 const RESPONSES = {
   notFound: JSON.stringify({ success: false, message: "Resource not found" }),
@@ -31,12 +36,12 @@ const vibeResponseMethods = {
     }
 
     if (typeof data === "object" && data !== null) {
-      this.setHeader("Content-Type", "application/json");
+      if (!this.headersSent) this.writeHead(this.statusCode || 200, JSON_CT);
       this.end(JSON.stringify(data));
       return;
     }
 
-    this.setHeader("Content-Type", "text/plain");
+    if (!this.headersSent) this.writeHead(this.statusCode || 200, TEXT_CT);
     this.end(String(data));
   },
 
@@ -45,7 +50,7 @@ const vibeResponseMethods = {
    * @param {Object} data
    */
   json(data) {
-    this.setHeader("Content-Type", "application/json");
+    if (!this.headersSent) this.writeHead(this.statusCode || 200, JSON_CT);
     this.end(JSON.stringify(data));
   },
 
@@ -146,8 +151,7 @@ const vibeResponseMethods = {
    * @param {string} message
    */
   success(data = null, message = "Success") {
-    this.statusCode = 200;
-    this.setHeader("Content-Type", "application/json");
+    this.writeHead(200, JSON_CT);
     this.end(JSON.stringify({ success: true, message, data }));
   },
 
@@ -157,8 +161,7 @@ const vibeResponseMethods = {
    * @param {string} message
    */
   created(data = null, message = "Resource created") {
-    this.statusCode = 201;
-    this.setHeader("Content-Type", "application/json");
+    this.writeHead(201, JSON_CT);
     this.end(JSON.stringify({ success: true, message, data }));
   },
 
@@ -168,8 +171,7 @@ const vibeResponseMethods = {
    * @param {any} errors
    */
   badRequest(message = "Bad Request", errors = null) {
-    this.statusCode = 400;
-    this.setHeader("Content-Type", "application/json");
+    this.writeHead(400, JSON_CT);
     this.end(
       errors
         ? JSON.stringify({ success: false, message, errors })
@@ -182,8 +184,7 @@ const vibeResponseMethods = {
    * @param {string} message
    */
   unauthorized(message) {
-    this.statusCode = 401;
-    this.setHeader("Content-Type", "application/json");
+    this.writeHead(401, JSON_CT);
     this.end(
       message
         ? JSON.stringify({ success: false, message })
@@ -196,8 +197,7 @@ const vibeResponseMethods = {
    * @param {string} message
    */
   forbidden(message) {
-    this.statusCode = 403;
-    this.setHeader("Content-Type", "application/json");
+    this.writeHead(403, JSON_CT);
     this.end(
       message
         ? JSON.stringify({ success: false, message })
@@ -210,8 +210,7 @@ const vibeResponseMethods = {
    * @param {string} message
    */
   notFound(message) {
-    this.statusCode = 404;
-    this.setHeader("Content-Type", "application/json");
+    this.writeHead(404, JSON_CT);
     this.end(
       message
         ? JSON.stringify({ success: false, message })
@@ -224,8 +223,7 @@ const vibeResponseMethods = {
    * @param {string} message
    */
   conflict(message) {
-    this.statusCode = 409;
-    this.setHeader("Content-Type", "application/json");
+    this.writeHead(409, JSON_CT);
     this.end(
       message
         ? JSON.stringify({ success: false, message })
@@ -239,8 +237,7 @@ const vibeResponseMethods = {
    */
   serverError(error) {
     console.error(error);
-    this.statusCode = 500;
-    this.setHeader("Content-Type", "application/json");
+    this.writeHead(500, JSON_CT);
     this.end(RESPONSES.serverError);
   },
 

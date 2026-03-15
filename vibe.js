@@ -85,6 +85,7 @@ function pathToRegex(path) {
  * @typedef {Object} RouteOptions
  * @property {Interceptor | Interceptor[]} [intercept]
  * @property {MediaOptions} [media]
+ * @property {{ response?: Object }} [schema] Schema for pre-compiled serialization
  */
 
 /**
@@ -92,9 +93,14 @@ function pathToRegex(path) {
  * @typedef {Object} VibeRoute
  * @property {string} method
  * @property {string} path
+ * @property {RegExp | null} pathRegex
  * @property {Handler | string | number | object} handler
  * @property {Interceptor | Interceptor[] | null} intercept
- * @property {MediaOptions} media
+ * @property {((data: any) => string) | null} serialize
+ * @property {MediaOptions | null} media
+ * @property {boolean} [isStatic]
+ * @property {number} [_handlerType]
+ * @property {string | null} [_prebuilt]
  */
 
 /**
@@ -198,6 +204,9 @@ const vibe = () => {
       intercept: null,
       serialize: null,
       media: null, // Only set when explicitly configured
+      // Pre-computed handler metadata (avoids typeof checks on hot path)
+      _handlerType: 0, // 0=unknown, 1=function, 2=prebuilt-string
+      _prebuilt: null, // Pre-stringified response for static handlers
     };
 
     // Handle overriding root route
@@ -227,6 +236,7 @@ const vibe = () => {
       }
       route.pathRegex = /^\/$/;
       route.isStatic = true;
+      finalizeRoute(route);
       trie.insert(method, "/", route);
       staticRoutes.set(method + "/", route);
       // Update existing root route in routes array
@@ -270,6 +280,9 @@ const vibe = () => {
     const isStatic = !fullPath.includes(":") && !fullPath.includes("*");
     route.isStatic = isStatic;
 
+    // Pre-compute handler type for fast-path dispatch
+    finalizeRoute(route);
+
     // Add to static routes Map for O(1) lookup
     if (isStatic) {
       staticRoutes.set(method + fullPath, route);
@@ -279,6 +292,28 @@ const vibe = () => {
     trie.insert(method, fullPath, route);
     routes.push(route);
     options.routeCount++;
+  }
+
+  /**
+   * Pre-computes handler type and pre-stringifies static values.
+   * This moves work from request-time to registration-time.
+   */
+  function finalizeRoute(route) {
+    const h = route.handler;
+    if (typeof h === "function") {
+      route._handlerType = 1; // function
+    } else if (typeof h === "string") {
+      route._handlerType = 2; // pre-built string
+      route._prebuilt = h;
+    } else if (typeof h === "object" && h !== null) {
+      route._handlerType = 2; // pre-built JSON
+      route._prebuilt = route.serialize
+        ? route.serialize(h)
+        : JSON.stringify(h);
+    } else if (typeof h === "number" || typeof h === "boolean") {
+      route._handlerType = 2; // pre-built primitive
+      route._prebuilt = String(h);
+    }
   }
 
   /**

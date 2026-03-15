@@ -5,9 +5,9 @@
     <b>The fastest Node.js web framework with the simplest syntax.</b>
   </p>
   <p>
-    <img src="https://img.shields.io/badge/performance-14,687_RPS-brightgreen" alt="Performance" />
-    <img src="https://img.shields.io/badge/vs_Express-2.2x_faster-blue" alt="vs Express" />
-    <img src="https://img.shields.io/badge/vs_Fastify-30%25_faster-orange" alt="vs Fastify" />
+    <img src="https://img.shields.io/badge/performance-11,472_RPS-brightgreen" alt="Performance" />
+    <img src="https://img.shields.io/badge/vs_Express-4.7x_faster-blue" alt="vs Express" />
+    <img src="https://img.shields.io/badge/vs_Fastify-faster-orange" alt="vs Fastify" />
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
   </p>
 </div>
@@ -20,29 +20,21 @@
 npm install vibe-gx
 ```
 
-### Optional: Build C++ Native Module
-
-For maximum performance, build the optional C++ native module:
-
-```bash
-npm run build:native
-```
-
-> If the build fails, Vibe automatically falls back to pure JavaScript with zero configuration.
+> Pure JavaScript — no native dependencies, no build steps, just install and go.
 
 ---
 
 ## 🏆 Why Vibe?
 
-| Metric                    |      Vibe      |  Express  |  Fastify   |
-| :------------------------ | :------------: | :-------: | :--------: |
-| **JSON Performance**      | **14,687 RPS** | 6,629 RPS | 11,289 RPS |
-| **Install Size**          |  **~280 KB**   |   ~5 MB   |   ~4 MB    |
-| **Lines for Hello World** |       3        |     5     |     6      |
-| **Dependencies**          |       2        |    30+    |    15+     |
-| **Built-in Clustering**   |       ✅       |    ❌     |     ❌     |
-| **Built-in Caching**      |       ✅       |    ❌     |     ❌     |
-| **C++ Optimizations**     |       ✅       |    ❌     |     ❌     |
+| Metric                     |      Vibe      |  Express  |  Fastify   |
+| :------------------------- | :------------: | :-------: | :--------: |
+| **JSON Performance**       | **11,472 RPS** | 2,421 RPS | 11,334 RPS |
+| **Install Size**           |  **~280 KB**   |   ~5 MB   |   ~4 MB    |
+| **Lines for Hello World**  |       3        |     5     |     6      |
+| **Dependencies**           |       1        |    30+    |    15+     |
+| **Built-in Clustering**    |       ✅       |    ❌     |     ❌     |
+| **Built-in Caching**       |       ✅       |    ❌     |     ❌     |
+| **Code-Gen Serialization** |       ✅       |    ❌     |     ✅     |
 
 > **Vibe is faster than Fastify, simpler than Express, and 14-18x smaller than both.**
 
@@ -50,19 +42,19 @@ npm run build:native
 
 ## ⚡ Features
 
-| Feature                  | Description                                                |
-| :----------------------- | :--------------------------------------------------------- |
-| 🚀 **C++ Native Module** | JSON stringify & URL parsing in C++                        |
-| 🎯 **Hybrid Router**     | O(1) static + O(log n) Trie routing                        |
-| 🔌 **Plugin System**     | Fastify-style `register()` with encapsulation              |
-| 🎨 **Decorators**        | Extend app, request, and response                          |
-| ⚡ **Cluster Mode**      | Built-in multi-process scaling                             |
-| 💾 **LRU Cache**         | Built-in response caching with ETag                        |
-| 🔗 **Connection Pool**   | Generic pool for databases                                 |
-| 📂 **File Uploads**      | Multipart uploads with size/type validation                |
-| 🌊 **Streaming**         | Large file uploads without buffering                       |
-| 🔒 **Security**          | Path traversal protection, body limits, error sanitization |
-| 🔄 **Express Adapter**   | Use any Express middleware with `adapt()`                  |
+| Feature                       | Description                                                |
+| :---------------------------- | :--------------------------------------------------------- |
+| 🚀 **Code-Gen Serialization** | Schema-compiled JSON serializers via `new Function()`      |
+| 🎯 **Hybrid Router**          | O(1) static + O(log n) Trie routing                        |
+| 🔌 **Plugin System**          | Fastify-style `register()` with encapsulation              |
+| 🎨 **Decorators**             | Extend app, request, and response                          |
+| ⚡ **Cluster Mode**           | Built-in multi-process scaling                             |
+| 💾 **LRU Cache**              | Built-in response caching with ETag                        |
+| 🔗 **Connection Pool**        | Generic pool for databases                                 |
+| 📂 **File Uploads**           | Multipart uploads with size/type validation                |
+| 🌊 **Streaming**              | Large file uploads without buffering                       |
+| 🔒 **Security**               | Path traversal protection, body limits, error sanitization |
+| 🔄 **Express Adapter**        | Use any Express middleware with `adapt()`                  |
 
 ---
 
@@ -520,6 +512,7 @@ app.get(
 **Benefits:**
 
 - ✅ 2-3x faster JSON serialization
+- ✅ Zero-loop code generation via `new Function()`
 - ✅ No `Object.keys()` enumeration
 - ✅ Zero runtime type checking
 - ✅ Completely optional (routes work without schemas)
@@ -633,14 +626,15 @@ Run benchmarks yourself:
 npm run benchmark
 ```
 
-Tested with 5,000 requests, 50 concurrency:
+Tested under overload (20,000 requests × 200 concurrent):
 
 ```
 Framework    | JSON RPS    | vs Express | vs Fastify
 -------------|-------------|------------|------------
-Vibe         | 14,687      | 2.2x ✅    | 1.3x ✅
-Fastify      | 11,289      | 1.7x       | baseline
-Express      | 6,629       | baseline   | 0.6x
+Vibe         | 11,472      | 4.7x ✅    | 1.01x ✅
+Fastify      | 11,334      | 4.7x       | baseline
+Hono         | 7,351       | 3.0x       | 0.6x
+Express      | 2,421       | baseline   | 0.2x
 ```
 
 ---

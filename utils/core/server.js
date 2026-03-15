@@ -1,18 +1,19 @@
 import http from "http";
-import {
-  error,
-  getNetworkIP,
-  handleError,
-  isSendAble,
-  matchPath,
-} from "./handler.js";
+import { error, getNetworkIP, handleError, isSendAble } from "./handler.js";
 import bodyParser from "./parser.js";
 import { installResponseMethods, initResponse } from "./response.js";
 import dns from "node:dns/promises";
 import { parseQuery } from "../native.js";
 
+// Pre-allocated headers (frozen for V8 optimization)
+const JSON_HEADERS = { "content-type": "application/json" };
+const TEXT_HEADERS = { "content-type": "text/plain" };
+
 // Pre-allocated 404 response
 const NOT_FOUND_BODY = "Not Found";
+
+// Shared frozen empty params (avoids per-request object allocation)
+const EMPTY_PARAMS = Object.freeze(Object.create(null));
 
 /**
  * Creates and starts the Vibe HTTP server.
@@ -21,6 +22,20 @@ const NOT_FOUND_BODY = "Not Found";
 async function server(options, port, host, callback) {
   // Install response methods on prototype ONCE (zero per-request cost)
   installResponseMethods(http.ServerResponse);
+
+  // Install lazy query getter on IncomingMessage prototype ONCE
+  if (!http.IncomingMessage.prototype._vibeQueryInstalled) {
+    Object.defineProperty(http.IncomingMessage.prototype, "query", {
+      get() {
+        if (this._parsedQuery !== undefined) return this._parsedQuery;
+        this._parsedQuery =
+          this._qIdx < 0 ? {} : parseQuery(this._rawUrl.slice(this._qIdx + 1));
+        return this._parsedQuery;
+      },
+      configurable: true,
+    });
+    http.IncomingMessage.prototype._vibeQueryInstalled = true;
+  }
 
   // Pre-compute everything we can
   const useTrieMatching = options.routeCount > options.trieThreshold;
@@ -73,29 +88,22 @@ async function server(options, port, host, callback) {
     return null;
   }
 
-  // Main request handler - OPTIMIZED
+  // Main request handler - ULTRA OPTIMIZED
   function reqListener(req, res) {
     // Fast pathname extraction
     const url = req.url;
     const qIdx = url.indexOf("?");
     const pathname = qIdx < 0 ? url : url.slice(0, qIdx);
 
-    // Lazy query via Object.defineProperty (replaces deprecated __defineGetter__)
-    let _query;
-    Object.defineProperty(req, "query", {
-      get() {
-        if (_query === undefined) {
-          _query = qIdx < 0 ? {} : parseQuery(url.slice(qIdx + 1));
-        }
-        return _query;
-      },
-      configurable: true,
-    });
+    // Store raw values for lazy query parsing (prototype getter handles the rest)
+    req._qIdx = qIdx;
+    req._rawUrl = url;
+    req._parsedQuery = undefined;
 
     req.url = pathname;
 
     // Stamp response with options ref (ONLY per-request cost for response methods)
-    initResponse(res, options);
+    res._vibeOptions = options;
 
     // Apply decorators (only if exist)
     if (requestDecoratorEntries) {
@@ -117,41 +125,44 @@ async function server(options, port, host, callback) {
       const staticMatch = staticRoutes.get(routeKey);
 
       if (staticMatch && !staticMatch.intercept) {
-        const { handler, serialize } = staticMatch;
-        req.params = {};
+        req.params = EMPTY_PARAMS;
+
+        // Pre-built response (string/object/number/boolean registered at route time)
+        if (staticMatch._handlerType === 2) {
+          const pb = staticMatch._prebuilt;
+          // Check if it looks like JSON (starts with { or [)
+          const c = pb.charCodeAt(0);
+          if (c === 123 || c === 91) {
+            res.writeHead(200, JSON_HEADERS);
+          } else {
+            res.writeHead(200, TEXT_HEADERS);
+          }
+          res.end(pb);
+          return;
+        }
+
+        // Function handler
+        const handler = staticMatch.handler;
+        const serialize = staticMatch.serialize;
 
         try {
-          if (typeof handler === "function") {
-            const result = handler(req, res);
-            // Check if handler returned a Promise (async handler)
-            if (result !== undefined && !res.writableEnded) {
-              if (result && typeof result.then === "function") {
-                // Async handler — fall through to async path
-                result
-                  .then((val) => {
-                    if (val !== undefined && !res.writableEnded) {
-                      if (serialize) {
-                        res.setHeader("Content-Type", "application/json");
-                        res.end(serialize(val));
-                      } else {
-                        res.json(val);
-                      }
-                    }
-                  })
-                  .catch((err) => handleError(err, req, res));
-              } else if (serialize) {
-                res.setHeader("Content-Type", "application/json");
-                res.end(serialize(result));
-              } else {
-                res.json(result);
-              }
-            }
-          } else if (isSendAble(handler)) {
-            if (serialize && typeof handler === "object" && handler !== null) {
-              res.setHeader("Content-Type", "application/json");
-              res.end(serialize(handler));
+          const result = handler(req, res);
+          if (result !== undefined && !res.writableEnded) {
+            if (result && typeof result.then === "function") {
+              result
+                .then((val) => {
+                  if (val !== undefined && !res.writableEnded) {
+                    res.writeHead(200, JSON_HEADERS);
+                    res.end(serialize ? serialize(val) : JSON.stringify(val));
+                  }
+                })
+                .catch((err) => handleError(err, req, res));
+            } else if (typeof result === "object" && result !== null) {
+              res.writeHead(200, JSON_HEADERS);
+              res.end(serialize ? serialize(result) : JSON.stringify(result));
             } else {
-              res.send(handler);
+              res.writeHead(200, TEXT_HEADERS);
+              res.end(String(result));
             }
           }
         } catch (err) {
@@ -190,7 +201,7 @@ async function server(options, port, host, callback) {
     }
 
     if (!match) {
-      res.writeHead(404, { "content-type": "text/plain" });
+      res.writeHead(404, TEXT_HEADERS);
       res.end(NOT_FOUND_BODY);
       return;
     }
@@ -218,15 +229,16 @@ async function server(options, port, host, callback) {
         if (result !== undefined && !res.writableEnded) {
           if (serialize) {
             // Pre-compiled schema serializer — fastest path
-            res.setHeader("Content-Type", "application/json");
+            res.writeHead(200, JSON_HEADERS);
             res.end(serialize(result));
           } else {
-            res.json(result);
+            res.writeHead(200, JSON_HEADERS);
+            res.end(JSON.stringify(result));
           }
         }
       } else if (isSendAble(handler)) {
         if (serialize && typeof handler === "object" && handler !== null) {
-          res.setHeader("Content-Type", "application/json");
+          res.writeHead(200, JSON_HEADERS);
           res.end(serialize(handler));
         } else {
           res.send(handler);
