@@ -5,10 +5,6 @@ node_modules/
 build/
 *.node
 
-# Native C++ module (optional, not needed at runtime)
-binding.gyp
-native/
-
 # Tests
 tests/
 

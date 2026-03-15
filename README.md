@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./assets/vlogo.png" alt="Vibe Logo" width="180" />
+  <img src="https://github.com/thesixers/vibe/blob/808b45722a0b3ca0d266215bbe4cc074f62283e5/assets/vlogo.png?raw=true" alt="Vibe Logo" width="180" />
   <h1>Vibe</h1>
   <p>
     <b>The fastest Node.js web framework with the simplest syntax.</b>
