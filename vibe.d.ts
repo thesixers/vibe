@@ -560,3 +560,33 @@ export function parseJsonStream(
   onEnd?: () => void,
   onError?: (err: Error) => void,
 ): void;
+
+// ==========================================
+// Express Middleware Adapter
+// ==========================================
+
+/**
+ * Adapt an Express-style middleware to work as a Vibe interceptor.
+ * @param mw - Express middleware function (req, res, next)
+ * @returns Vibe-compatible interceptor
+ *
+ * @example
+ * import { adapt } from "vibe-gx";
+ * import cors from "cors";
+ * import cookieParser from "cookie-parser";
+ *
+ * app.plugin(adapt(cors()));
+ * app.plugin(adapt(cookieParser()));
+ */
+export function adapt(
+  mw: (req: any, res: any, next: (err?: any) => void) => void,
+): Interceptor;
+
+/**
+ * Adapt multiple Express middlewares at once.
+ * @param middlewares - Express middleware functions
+ * @returns Array of Vibe-compatible interceptors
+ */
+export function adaptAll(
+  ...middlewares: Array<(req: any, res: any, next: (err?: any) => void) => void>
+): Interceptor[];

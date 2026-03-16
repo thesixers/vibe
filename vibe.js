@@ -570,7 +570,7 @@ const vibe = () => {
 };
 
 export default vibe;
-export { color };
+export { color, adapt };
 
 // Scalability utilities
 export {

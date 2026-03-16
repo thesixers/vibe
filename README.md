@@ -428,7 +428,7 @@ process.on("SIGTERM", () => dbPool.close());
 Use any Express middleware with the adapter:
 
 ```javascript
-import { adapt } from "vibe-gx/utils/helpers/adapt.js";
+import vibe, { adapt } from "vibe-gx";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
