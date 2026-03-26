@@ -202,6 +202,13 @@ async function setup() {
     random: Math.random(),
   }));
 
+  // Caching - query param differentiation
+  const cacheQ = new LRUCache({ max: 100, ttl: 5000 });
+  app.get("/cached-query", { intercept: cacheMiddleware(cacheQ) }, (req) => ({
+    page: req.query.page || "1",
+    random: Math.random(),
+  }));
+
   return new Promise((resolve) => {
     server = app.listen(PORT, "127.0.0.1", () => {
       console.log(`\n🧪 Test server running on port ${PORT}\n`);
@@ -457,6 +464,34 @@ async function runTests() {
     const json2 = await res2.json();
 
     assertEqual(json1.random, json2.random, "Cache should return same value");
+  });
+
+  await test("Different query strings get different cache entries", async () => {
+    const res1 = await fetch(`${BASE}/cached-query?page=1`);
+    const json1 = await res1.json();
+
+    const res2 = await fetch(`${BASE}/cached-query?page=2`);
+    const json2 = await res2.json();
+
+    if (json1.random === json2.random) {
+      throw new Error(
+        "Cache returned same value for different query strings — cache key bug still present",
+      );
+    }
+  });
+
+  await test("Same query string returns cached response", async () => {
+    const res1 = await fetch(`${BASE}/cached-query?page=42`);
+    const json1 = await res1.json();
+
+    const res2 = await fetch(`${BASE}/cached-query?page=42`);
+    const json2 = await res2.json();
+
+    assertEqual(
+      json1.random,
+      json2.random,
+      "Same query should hit cache and return same value",
+    );
   });
 
   console.log("\n📋 12. STRESS TEST\n");

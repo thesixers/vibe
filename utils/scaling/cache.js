@@ -145,7 +145,17 @@ export class LRUCache {
  */
 export function cacheMiddleware(cache) {
   return (req, res) => {
-    const key = LRUCache.key(req.method, req.url);
+    // Use the full original URL (includes query string) for the cache key.
+    // req.url is overwritten with just the pathname by the server internals,
+    // so we fall back to req._rawUrl which preserves the full URL.
+    // We also append serialized route params so that parameterised routes
+    // (e.g. /users/:id) with different param values get distinct cache entries.
+    const rawUrl = req._rawUrl || req.url;
+    const paramsStr =
+      req.params && Object.keys(req.params).length > 0
+        ? JSON.stringify(req.params)
+        : "";
+    const key = LRUCache.key(req.method, rawUrl + paramsStr);
     const entry = cache.get(key);
 
     if (entry) {
@@ -164,14 +174,43 @@ export function cacheMiddleware(cache) {
       return false; // Stop execution
     }
 
-    // Store original json method to intercept response
+    // Store original json and end methods to intercept response
     const originalJson = res.json.bind(res);
+    const originalEnd = res.end.bind(res);
+
+    // Intercept res.json (explicit json calls by handler)
     res.json = (data) => {
-      // Cache the response
       const newEntry = cache.set(key, data);
       res.setHeader("ETag", newEntry.etag);
       res.setHeader("X-Cache", "MISS");
       originalJson(data);
+    };
+
+    // Intercept res.end (implicit return-value path in server.js uses
+    // res.writeHead + res.end directly, bypassing res.json).
+    // Note: res.getHeader() does NOT see headers set via res.writeHead(),
+    // so we can't check Content-Type that way. Instead, try JSON.parse directly.
+    res.end = (body) => {
+      if (body && !res._vibeCached) {
+        try {
+          const parsed = JSON.parse(body);
+          // Only cache plain objects/arrays — not error objects, not primitives
+          if (
+            typeof parsed === "object" &&
+            parsed !== null &&
+            !parsed.error // skip error responses
+          ) {
+            res._vibeCached = true;
+            const newEntry = cache.set(key, parsed);
+            // setHeader is safe here — headers not yet flushed
+            res.setHeader("ETag", newEntry.etag);
+            res.setHeader("X-Cache", "MISS");
+          }
+        } catch {
+          // Not JSON — skip caching
+        }
+      }
+      originalEnd(body);
     };
 
     return true; // Continue to handler

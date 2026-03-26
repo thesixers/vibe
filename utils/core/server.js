@@ -2,7 +2,6 @@ import http from "http";
 import { error, getNetworkIP, handleError, isSendAble } from "./handler.js";
 import bodyParser from "./parser.js";
 import { installResponseMethods, initResponse } from "./response.js";
-import dns from "node:dns/promises";
 import { parseQuery } from "../native.js";
 
 // Pre-allocated headers (frozen for V8 optimization)
@@ -256,10 +255,7 @@ async function server(options, port, host, callback) {
 
   const vibe_server = http.createServer(reqListener);
 
-  vibe_server.listen(port, mainHost, async () => {
-    try {
-      await dns.lookup("::", { all: true });
-    } catch {}
+  vibe_server.listen(port, mainHost, () => {
     getNetworkIP(mainHost, port);
 
     const strategy = useTrieMatching ? "Trie (O(log n))" : "Linear (O(n))";
@@ -271,7 +267,29 @@ async function server(options, port, host, callback) {
   });
 
   vibe_server.on("error", (err) => {
-    error(`Port ${port} is already in use! \n${err.message}`);
+    if (err.code === "EADDRINUSE") {
+      error(`Port ${port} is already in use! \n${err.message}`);
+      process.exit(1);
+    } else {
+      error(`Server error: \n${err.message}`);
+    }
+  });
+
+  // Graceful shutdown support for node --watch, nodemon, and cluster mode
+  const shutdown = () => {
+    // vibe_server.close stops accepting new connections
+    // Existing keep-alive connections will still prevent instant exit,
+    // so we force an exit if it takes longer than 3 seconds.
+    vibe_server.close(() => {
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 3000).unref();
+  };
+
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+  process.on("message", (msg) => {
+    if (msg === "shutdown") shutdown();
   });
 }
 

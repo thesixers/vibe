@@ -215,13 +215,13 @@ Extend app, request, or response with custom properties:
 // App decorator - shared config
 app.decorate("config", { env: "production", version: "1.0.0" });
 
-// Access via app.decorators in main app
-app.get("/version", () => ({ version: app.decorators.config.version }));
+// Access directly on the app
+app.get("/version", () => ({ version: app.config.version }));
 
-// In plugins, decorators are spread directly (no .decorators)
+// Same in plugins — decorators are spread directly
 app.register(
   async (api) => {
-    api.get("/env", () => ({ env: api.config.env })); // Direct access
+    api.get("/env", () => ({ env: api.config.env }));
   },
   { prefix: "/api" },
 );

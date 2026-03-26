@@ -460,6 +460,8 @@ const vibe = () => {
       throw new Error(`Decorator '${name}' already exists`);
     }
     options.decorators[name] = value;
+    // Also set directly on the app object for easy access (app.name)
+    if (app) app[name] = value;
   }
 
   /**
