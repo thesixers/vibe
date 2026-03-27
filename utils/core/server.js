@@ -1,4 +1,5 @@
 import http from "http";
+import crypto from "crypto";
 import { error, getNetworkIP, handleError, isSendAble } from "./handler.js";
 import bodyParser from "./parser.js";
 import { installResponseMethods, initResponse } from "./response.js";
@@ -89,6 +90,25 @@ async function server(options, port, host, callback) {
 
   // Main request handler - ULTRA OPTIMIZED
   function reqListener(req, res) {
+    req.id = crypto.randomUUID();
+    req.log = options.logger.child({ reqId: req.id });
+
+    if (options.loggerConfig && options.loggerConfig.lifecycle) {
+      req.startTime = Date.now();
+      req.log.info({ type: "req" }, "Incoming request");
+
+      res.on("finish", () => {
+        req.log.info(
+          {
+            type: "res",
+            statusCode: res.statusCode,
+            responseTimeMs: Date.now() - req.startTime,
+          },
+          "Request completed",
+        );
+      });
+    }
+
     // Fast pathname extraction
     const url = req.url;
     const qIdx = url.indexOf("?");
@@ -150,13 +170,19 @@ async function server(options, port, host, callback) {
             if (result && typeof result.then === "function") {
               result
                 .then((val) => {
+                  if (val instanceof Error) {
+                    return options.errorHandler(val, req, res);
+                  }
                   if (val !== undefined && !res.writableEnded) {
                     res.writeHead(200, JSON_HEADERS);
                     res.end(serialize ? serialize(val) : JSON.stringify(val));
                   }
                 })
-                .catch((err) => handleError(err, req, res));
+                .catch((err) => options.errorHandler(err, req, res));
             } else if (typeof result === "object" && result !== null) {
+              if (result instanceof Error) {
+                return options.errorHandler(result, req, res);
+              }
               res.writeHead(200, JSON_HEADERS);
               res.end(serialize ? serialize(result) : JSON.stringify(result));
             } else {
@@ -165,7 +191,7 @@ async function server(options, port, host, callback) {
             }
           }
         } catch (err) {
-          handleError(err, req, res);
+          options.errorHandler(err, req, res);
         }
         return;
       }
@@ -225,6 +251,9 @@ async function server(options, port, host, callback) {
       // Execute handler
       if (typeof handler === "function") {
         const result = await handler(req, res);
+        if (result instanceof Error) {
+          return options.errorHandler(result, req, res);
+        }
         if (result !== undefined && !res.writableEnded) {
           if (serialize) {
             // Pre-compiled schema serializer — fastest path
@@ -246,7 +275,7 @@ async function server(options, port, host, callback) {
         throw new Error("Invalid handler type");
       }
     } catch (err) {
-      handleError(err, req, res);
+      options.errorHandler(err, req, res);
     }
   }
 

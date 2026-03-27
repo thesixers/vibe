@@ -35,6 +35,10 @@ const vibeResponseMethods = {
       throw new Error("Response data is not a sendable data type");
     }
 
+    if (data instanceof Error) {
+      return this._vibeOptions.errorHandler(data, this.req, this);
+    }
+
     if (typeof data === "object" && data !== null) {
       if (!this.headersSent) this.writeHead(this.statusCode || 200, JSON_CT);
       this.end(JSON.stringify(data));
@@ -50,6 +54,9 @@ const vibeResponseMethods = {
    * @param {Object} data
    */
   json(data) {
+    if (data instanceof Error) {
+      return this._vibeOptions.errorHandler(data, this.req, this);
+    }
     if (!this.headersSent) this.writeHead(this.statusCode || 200, JSON_CT);
     this.end(JSON.stringify(data));
   },

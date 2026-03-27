@@ -142,11 +142,16 @@ export function handleError(error, req, res) {
   const isDev = process.env.NODE_ENV !== "production";
   const message = error.message || "Unknown error";
 
-  // Log error (full stack in dev, message only in production)
-  if (isDev) {
-    console.error("[VIBE ERROR]:", error);
+  // Log error using context-aware structured logger if available
+  if (req && req.log) {
+    req.log.error(error);
   } else {
-    console.error("[VIBE ERROR]:", message);
+    // Fallback: full stack in dev, message only in production
+    if (isDev) {
+      console.error("[VIBE ERROR]:", error);
+    } else {
+      console.error("[VIBE ERROR]:", message);
+    }
   }
 
   if (!res.headersSent) {

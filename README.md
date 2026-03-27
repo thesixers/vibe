@@ -46,7 +46,7 @@ npm install vibe-gx
 | :---------------------------- | :--------------------------------------------------------- |
 | 🚀 **Code-Gen Serialization** | Schema-compiled JSON serializers via `new Function()`      |
 | 🎯 **Hybrid Router**          | O(1) static + O(log n) Trie routing                        |
-| 🔌 **Plugin System**          | Fastify-style `register()` with encapsulation              |
+| 🔌 **Plugin System**          | Encapsulated `register()` with optional route prefixes     |
 | 🎨 **Decorators**             | Extend app, request, and response                          |
 | ⚡ **Cluster Mode**           | Built-in multi-process scaling                             |
 | 💾 **LRU Cache**              | Built-in response caching with ETag                        |
@@ -133,7 +133,52 @@ app.post("/users", (req) => {
 
 ---
 
-## 🔌 Plugins (Fastify-style)
+## 📝 Logging & Error Handling
+
+Vibe ships with a structured JSON logger (Pino-compatible) and a powerful error interception system. Errors thrown, returned, or sent from any route are automatically caught and routed through a central error handler.
+
+### JSON Structured Logging
+
+Initialize the app with `logger: { lifecycle: true }` or add `prettyPrint: true` for development to get beautiful, human-readable terminal output.
+
+```javascript
+const app = vibe({
+  logger: {
+    lifecycle: true,
+    prettyPrint: process.env.NODE_ENV !== "production",
+  },
+});
+
+// JSON native bindings
+app.log.info({ database: "online" }, "System booting...");
+```
+
+### Contextual Sub-Loggers
+
+Every incoming request dynamically extracts a fast UUID exposed securely on `req.id` natively piping through to `req.log`.
+
+```javascript
+app.get("/users/:id", (req) => {
+  req.log.warn("Database lookup constraint fired");
+  // Production Output -> {"level":40,"time":123,"reqId":"abcd-123", "msg":"..."}
+
+  return { success: true };
+});
+```
+
+### Central Error Abstraction
+
+To route an error into the central handler without halting execution via `throw`, simply return an `Error` object from your handler — Vibe intercepts it automatically:
+
+```javascript
+app.get("/test", (req, res) => {
+  return new Error("Something went wrong");
+});
+```
+
+---
+
+## 🔌 Plugin System
 
 Plugins provide encapsulated route groups with optional prefixes:
 
@@ -541,22 +586,26 @@ app.post(
 
 ### Application
 
-| Method                                           | Description          |
-| :----------------------------------------------- | :------------------- |
-| `app.get/post/put/del/patch/head(path, handler)` | Register route       |
-| `app.listen(port, host?, callback?)`             | Start server         |
-| `app.register(fn, { prefix })`                   | Register plugin      |
-| `app.plugin(fn)`                                 | Global interceptor   |
-| `app.decorate(name, value)`                      | Add app property     |
-| `app.decorateRequest(name, value)`               | Add to all requests  |
-| `app.decorateReply(name, value)`                 | Add to all responses |
-| `app.setPublicFolder(path)`                      | Set static folder    |
-| `app.logRoutes()`                                | Log all routes       |
+| Method                                           | Description            |
+| :----------------------------------------------- | :--------------------- |
+| `vibe({ logger?: LoggerConfig })`                | Initialize app         |
+| `app.setErrorHandler(fn)`                        | Override error handler |
+| `app.get/post/put/del/patch/head(path, handler)` | Register route         |
+| `app.listen(port, host?, callback?)`             | Start server           |
+| `app.register(fn, { prefix })`                   | Register plugin        |
+| `app.plugin(fn)`                                 | Global interceptor     |
+| `app.decorate(name, value)`                      | Add app property       |
+| `app.decorateRequest(name, value)`               | Add to all requests    |
+| `app.decorateReply(name, value)`                 | Add to all responses   |
+| `app.setPublicFolder(path)`                      | Set static folder      |
+| `app.logRoutes()`                                | Log all routes         |
 
 ### Request (`req`)
 
 | Property      | Description                |
 | :------------ | :------------------------- |
+| `req.id`      | Auto-generated UUID logic  |
+| `req.log`     | Context-bound logger API   |
 | `req.params`  | Route parameters (`:id`)   |
 | `req.query`   | Query string (`?page=1`)   |
 | `req.body`    | Parsed JSON/form body      |

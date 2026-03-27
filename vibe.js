@@ -4,6 +4,8 @@ import { color } from "./utils/helpers/colors.js";
 import { RouteTrie } from "./utils/core/trie.js";
 import { PathToRegex } from "./utils/core/handler.js";
 import { compileSerializer } from "./utils/core/compile-serializer.js";
+import { createLogger, Logger } from "./utils/core/logger.js";
+import { handleError } from "./utils/core/handler.js";
 
 /**
  * Helper to generate regex for a path
@@ -129,9 +131,11 @@ function pathToRegex(path) {
 
 /**
  * Initializes a Vibe application instance.
+ * @param {Object} [config={}]
+ * @param {Object|boolean} [config.logger] - Logger configuration
  * @returns {VibeApp}
  */
-const vibe = () => {
+const vibe = (config = {}) => {
   // Route trie for O(log n) matching (used when routes > threshold)
   const trie = new RouteTrie();
 
@@ -143,6 +147,14 @@ const vibe = () => {
 
   // Static routes Map for O(1) lookup (routes without params)
   const staticRoutes = new Map();
+
+  // Logger initialization
+  const loggerConfig =
+    config.logger !== false ? config.logger || {} : { level: "silent" };
+  const appLogger =
+    config.logger instanceof Logger
+      ? config.logger
+      : createLogger(loggerConfig);
 
   // Internal configuration
   const options = {
@@ -156,6 +168,9 @@ const vibe = () => {
     decorators: {},
     requestDecorators: {},
     replyDecorators: {},
+    logger: appLogger,
+    loggerConfig,
+    errorHandler: handleError,
   };
 
   // Register default landing route
@@ -534,12 +549,13 @@ const vibe = () => {
   }
 
   /**
-   * Logs a message with optional color
-   * @param {string} message
-   * @param {string} [colorValue="reset"]
+   * Log messages out using the Vibe stylized legacy logger.
+   * Native string logging bypasses the Pino JSON interface.
    */
-  const log = (message, colorValue = "reset") =>
-    process.stdout.write(`${color[colorValue](message)}\n`);
+  const log = (message, typeOrColor = "reset") => {
+    const c = color[typeOrColor] || color.reset;
+    process.stdout.write(c(message) + "\n");
+  };
 
   // Build the app object with decorators
   const app = {
@@ -551,8 +567,13 @@ const vibe = () => {
     head,
     listen,
     logRoutes,
-    log,
+    log: appLogger, // Standard Fastify-like exposure (app.log.info())
+    logger: appLogger,
+    logLegacy: log,
     setPublicFolder,
+    setErrorHandler: (fn) => {
+      options.errorHandler = fn;
+    },
     include,
     plugin,
     register,

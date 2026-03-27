@@ -173,6 +173,49 @@ export interface RegisterOptions {
 }
 
 // ==========================================
+// Logging System
+// ==========================================
+
+export interface LoggerConfig {
+  /** If true, automatically logs request lifecycle hooks (Incoming Request, Request Completed) */
+  lifecycle?: boolean;
+  /** If true, formats JSON output into human-readable Vibe-styled terminal lines (like pino-pretty) */
+  prettyPrint?: boolean;
+  /** Custom writable stream to output logs to (defaults to process.stdout) */
+  stream?: NodeJS.WritableStream;
+}
+
+/**
+ * Fastify/Pino-compatible structured logger API.
+ *
+ * All methods accept a message string OR a structured object (Pino-style).
+ * An optional color string can be passed as the last argument — in prettyPrint
+ * mode it will colorize the terminal output, in production mode it writes as
+ * a plain JSON `{ color: "..." }` key for log pipelines.
+ *
+ * @example
+ * req.log.info("Processing payment");
+ * req.log.info({ userId: 42, amount: 100 }, "Payment initiated");
+ * req.log.error(new Error("DB timeout"));
+ * req.log.warn("Slow query detected", "yellow");  // color override
+ */
+export interface LoggerAPI {
+  trace(obj: object | string | Error, msg?: string, color?: ColorName): void;
+  debug(obj: object | string | Error, msg?: string, color?: ColorName): void;
+  info(obj: object | string | Error, msg?: string, color?: ColorName): void;
+  warn(obj: object | string | Error, msg?: string, color?: ColorName): void;
+  error(obj: object | string | Error, msg?: string, color?: ColorName): void;
+  fatal(obj: object | string | Error, msg?: string, color?: ColorName): void;
+  /** Returns a child logger with merged bindings (e.g., { reqId }) */
+  child(bindings: Record<string, any>): LoggerAPI;
+}
+
+export interface VibeConfig {
+  /** Configuration for the native Vibe terminal logger */
+  logger?: LoggerConfig | boolean;
+}
+
+// ==========================================
 // Request & Response Extensions
 // ==========================================
 
@@ -192,6 +235,10 @@ export interface VibeRequest extends IncomingMessage {
   ip?: string;
   /** Detailed client IP info */
   fullIp?: string;
+  /** Automatically generated UUID for the request lifecycle */
+  id: string;
+  /** Context-bound logger automatically stamped with the req.id constraint */
+  log: LoggerAPI;
   /** Custom properties added via decorateRequest */
   [key: string]: any;
 }
@@ -338,11 +385,14 @@ export interface RouterAPI {
   head: RouteRegistrar;
 
   /**
-   * Log helper
-   * @param value The message to log
-   * @param color Optional color name (e.g. 'green', 'red')
+   * Log helper supporting native colors and Vibe-stylized log levels
+   * @param value The message or object to log
+   * @param typeOrColor Optional color name (e.g. 'green') or level ('info', 'warn', 'error', 'req')
    */
-  log: (value: any, color?: ColorName) => void;
+  log: (
+    value: any,
+    typeOrColor?: ColorName | "info" | "error" | "warn" | "req",
+  ) => void;
 
   /** Register a global interceptor */
   plugin: (interceptor: Interceptor) => void;
@@ -401,15 +451,44 @@ export interface VibeApp extends RouterAPI {
     maybeFunc?: (router: RouterAPI) => void,
   ) => void;
 
-  /** Access app decorators */
+  /**
+   * Access app decorators
+   * @type {Record<string, any>}
+   */
   readonly decorators: Record<string, any>;
+
+  /**
+   * Override the default error handler (Fastify-style).
+   * Called for any unhandled `throw`, `return new Error()`, or `res.send(error)`.
+   * @example
+   * app.setErrorHandler((error, req, res) => {
+   *   req.log.error(error);
+   *   res.status(503).json({ success: false, message: error.message });
+   * });
+   */
+  setErrorHandler(
+    fn: (error: Error, req: VibeRequest, res: VibeResponse) => void,
+  ): void;
+
+  /**
+   * Pino/Fastify-compatible structured logger instance.
+   * Use for application-level logging outside of routes.
+   * @example
+   * app.log.info({ db: "connected" }, "Server ready");
+   * app.log.info("Server ready", "green"); // with color in prettyPrint mode
+   */
+  log: LoggerAPI;
+
+  /** Alias for `app.log` */
+  logger: LoggerAPI;
 }
 
 /**
  * Initialize a new Vibe application.
+ * @param config Optional application configuration
  * @returns Vibe application instance
  */
-export default function vibe(): VibeApp;
+export default function vibe(config?: VibeConfig): VibeApp;
 
 // ==========================================
 // LRU Cache
