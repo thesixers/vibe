@@ -26,6 +26,20 @@ cluster(() => {
 
 Vibe automatically forks one worker per CPU core. On an 8-core machine you get 8 worker processes all sharing port `3000`.
 
+## Auto-Restart Mode
+
+Instead of manually wrapping your application with `cluster`, Vibe provides an out-of-the-box convenience toggle. Passing `autoRestart: true` into Vibe's config automatically spawns a managed 1-worker cluster. If your server crashes due to an unhandled error, Vibe will seamlessly restart it.
+
+```js
+const app = vibe({
+  autoRestart: true, // Native crash recovery
+});
+
+app.listen(3000);
+```
+
+This is perfect for simple setups that need resilient high availability but don't need a full multi-core spread.
+
 ## `cluster(workerFn, options?)`
 
 | Option          | Type       | Default            | Description                                                |

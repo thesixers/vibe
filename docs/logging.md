@@ -9,7 +9,10 @@ const app = vibe({
   logger: {
     lifecycle: true, // Auto-log request start + completion
     prettyPrint: true, // Human-readable output in terminal
+    colors: true, // Prettify with terminal colors
     level: "info", // Minimum log level (default: "info")
+    dest: "both", // "console", "file", or "both"
+    logFile: "vibe.log",
   },
 });
 ```
@@ -129,9 +132,20 @@ dbLogger.info("Query started");
 // {"component":"database","msg":"Query started",...}
 ```
 
-## Custom Stream
+## Custom Stream & File Logging
 
-Redirect log output to a file or any writable stream:
+By default, Vibe logs to the console. You can easily switch this using the `dest` option ( `"console"`, `"file"`, or `"both"` ). When writing to a file, Vibe will stream uncolored JSON logs.
+
+```js
+const app = vibe({
+  logger: {
+    dest: "file",
+    logFile: "./app.log",
+  },
+});
+```
+
+You can also completely redirect output to any custom writable stream:
 
 ```js
 import { createWriteStream } from "fs";

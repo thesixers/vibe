@@ -1,4 +1,5 @@
 import os from "os";
+import fs from "fs";
 import { color } from "../helpers/colors.js";
 
 const LOG_LEVELS = {
@@ -25,10 +26,19 @@ const LEVEL_NAMES = {
 export class Logger {
   constructor(options = {}) {
     this.level = LOG_LEVELS[options.level || "info"] || 30;
-    this.prettyPrint = options.prettyPrint || false;
+    this.colors = options.colors !== undefined ? options.colors : true;
+    this.prettyPrint =
+      options.prettyPrint !== undefined ? options.prettyPrint : this.colors;
     this.lifecycle = options.lifecycle || false;
     this.stream = options.stream || process.stdout;
+    this.dest = options.dest || "console"; // "console", "file", "both"
+    this.logFile = options.logFile;
     this.bindings = options.bindings || {};
+
+    // Initialize file stream if needed
+    if (this.logFile && (this.dest === "file" || this.dest === "both")) {
+      this.fileStream = fs.createWriteStream(this.logFile, { flags: "a" });
+    }
 
     if (!this.bindings.pid) this.bindings.pid = process.pid;
     if (!this.bindings.hostname) this.bindings.hostname = os.hostname();
@@ -42,9 +52,12 @@ export class Logger {
       level: Object.keys(LOG_LEVELS).find(
         (key) => LOG_LEVELS[key] === this.level,
       ),
+      colors: this.colors,
       prettyPrint: this.prettyPrint,
       lifecycle: this.lifecycle,
       stream: this.stream,
+      dest: this.dest,
+      logFile: this.logFile,
       bindings: { ...this.bindings, ...bindings },
     });
   }
@@ -107,10 +120,16 @@ export class Logger {
 
     const finalLog = { ...base, ...logData };
 
-    if (this.prettyPrint) {
-      this._printPretty(finalLog);
-    } else {
-      this.stream.write(JSON.stringify(finalLog) + "\n");
+    if (this.dest === "console" || this.dest === "both") {
+      if (this.prettyPrint) {
+        this._printPretty(finalLog);
+      } else {
+        this.stream.write(JSON.stringify(finalLog) + "\n");
+      }
+    }
+
+    if ((this.dest === "file" || this.dest === "both") && this.fileStream) {
+      this.fileStream.write(JSON.stringify(finalLog) + "\n");
     }
   }
 

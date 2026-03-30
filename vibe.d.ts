@@ -181,6 +181,12 @@ export interface LoggerConfig {
   lifecycle?: boolean;
   /** If true, formats JSON output into human-readable Vibe-styled terminal lines (like pino-pretty) */
   prettyPrint?: boolean;
+  /** If true, applies ANSI color formatting to terminal logs. Default: true (unless overridden) */
+  colors?: boolean;
+  /** Destination for the logs. Accepts "console", "file", or "both". Default: "console" */
+  dest?: "console" | "file" | "both";
+  /** Absolute or relative path to the target log file. Active when dest is "file" or "both" */
+  logFile?: string;
   /** Custom writable stream to output logs to (defaults to process.stdout) */
   stream?: NodeJS.WritableStream;
 }
@@ -213,6 +219,8 @@ export interface LoggerAPI {
 export interface VibeConfig {
   /** Configuration for the native Vibe terminal logger */
   logger?: LoggerConfig | boolean;
+  /** Enable automatic process restarting on crash. Spawns an internal cluster manager. Default: false */
+  autoRestart?: boolean;
 }
 
 // ==========================================

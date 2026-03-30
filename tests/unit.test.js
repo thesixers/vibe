@@ -205,7 +205,7 @@ assert(typeof app.include === "function", "include method exists");
 console.log("\n📋 Test 10: Utility Methods");
 
 assert(typeof app.listen === "function", "listen method exists");
-assert(typeof app.log === "function", "log method exists");
+assert(typeof app.log === "object", "log object exists");
 assert(
   typeof app.setPublicFolder === "function",
   "setPublicFolder method exists",

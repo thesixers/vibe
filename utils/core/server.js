@@ -95,7 +95,15 @@ async function server(options, port, host, callback) {
 
     if (options.loggerConfig && options.loggerConfig.lifecycle) {
       req.startTime = Date.now();
-      req.log.info({ type: "req" }, "Incoming request");
+
+      // Determine sender IP early for logging
+      const sender =
+        req.socket.remoteAddress || req.headers["x-forwarded-for"] || "unknown";
+
+      req.log.info(
+        { type: "req", url: req.url, method: req.method, sender },
+        "Incoming request",
+      );
 
       res.on("finish", () => {
         req.log.info(

@@ -6,6 +6,7 @@ import { PathToRegex } from "./utils/core/handler.js";
 import { compileSerializer } from "./utils/core/compile-serializer.js";
 import { createLogger, Logger } from "./utils/core/logger.js";
 import { handleError } from "./utils/core/handler.js";
+import { clusterize } from "./utils/scaling/cluster.js";
 
 /**
  * Helper to generate regex for a path
@@ -133,6 +134,7 @@ function pathToRegex(path) {
  * Initializes a Vibe application instance.
  * @param {Object} [config={}]
  * @param {Object|boolean} [config.logger] - Logger configuration
+ * @param {boolean} [config.autoRestart] - Restart server automatically on crash
  * @returns {VibeApp}
  */
 const vibe = (config = {}) => {
@@ -172,6 +174,22 @@ const vibe = (config = {}) => {
     loggerConfig,
     errorHandler: handleError,
   };
+
+  // Add global uncaught exception handler to prevent silent deaths and log cleanly
+  process.on("uncaughtException", (err) => {
+    appLogger.fatal(err, "Uncaught Exception crashed the server");
+    // Only exit here if we're not exiting gracefully anyway,
+    // cluster manager will restart it.
+    setTimeout(() => process.exit(1), 100);
+  });
+
+  process.on("unhandledRejection", (reason, promise) => {
+    appLogger.fatal(
+      { err: reason },
+      "Unhandled Promise Rejection crashed the server",
+    );
+    setTimeout(() => process.exit(1), 100);
+  });
 
   // Register default landing route
   const defaultRoute = {
@@ -377,7 +395,13 @@ const vibe = (config = {}) => {
       host = undefined;
     }
 
-    server(options, Number(port), host, callback);
+    const startServer = () => server(options, Number(port), host, callback);
+
+    if (config.autoRestart) {
+      clusterize(startServer, { workers: 1, restart: true });
+    } else {
+      startServer();
+    }
   }
 
   /**

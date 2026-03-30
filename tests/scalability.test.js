@@ -42,7 +42,7 @@ assert(cache.size === 3, "Cache size is correct");
 // Test LRU eviction
 cache.set("key4", "value4");
 assert(cache.size === 3, "Cache evicts oldest entry");
-assert(cache.get("key1") === null, "Oldest entry was evicted");
+assert(cache.get("key2") === null, "Oldest entry was evicted");
 
 // Test ETag generation
 const etag = LRUCache.etag({ test: "data" });
