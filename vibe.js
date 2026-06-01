@@ -134,9 +134,12 @@ function pathToRegex(path) {
  * Initializes a Vibe application instance.
  * @param {Object} [config={}]
  * @param {Object|boolean} [config.logger] - Logger configuration
- * @param {boolean} [config.autoRestart] - Restart server automatically on crash
  * @returns {VibeApp}
  */
+// Guard to ensure process-level listeners are only registered once
+// across multiple vibe() instances (e.g. in test environments)
+let _processListenersInstalled = false;
+
 const vibe = (config = {}) => {
   // Route trie for O(log n) matching (used when routes > threshold)
   const trie = new RouteTrie();
@@ -145,7 +148,7 @@ const vibe = (config = {}) => {
   const routes = [];
 
   // Threshold for switching between linear and trie matching
-  const TRIE_THRESHOLD = 50;
+  const TRIE_THRESHOLD = 40;
 
   // Static routes Map for O(1) lookup (routes without params)
   const staticRoutes = new Map();
@@ -175,21 +178,24 @@ const vibe = (config = {}) => {
     errorHandler: handleError,
   };
 
-  // Add global uncaught exception handler to prevent silent deaths and log cleanly
-  process.on("uncaughtException", (err) => {
-    appLogger.fatal(err, "Uncaught Exception crashed the server");
-    // Only exit here if we're not exiting gracefully anyway,
-    // cluster manager will restart it.
-    setTimeout(() => process.exit(1), 100);
-  });
+  // Register global process listeners once only (prevents listener leak
+  // when vibe() is called multiple times e.g. in tests)
+  if (!_processListenersInstalled) {
+    _processListenersInstalled = true;
 
-  process.on("unhandledRejection", (reason, promise) => {
-    appLogger.fatal(
-      { err: reason },
-      "Unhandled Promise Rejection crashed the server",
-    );
-    setTimeout(() => process.exit(1), 100);
-  });
+    process.on("uncaughtException", (err) => {
+      appLogger.fatal(err, "Uncaught Exception crashed the server");
+      setTimeout(() => process.exit(1), 100);
+    });
+
+    process.on("unhandledRejection", (reason) => {
+      appLogger.fatal(
+        { err: reason },
+        "Unhandled Promise Rejection crashed the server",
+      );
+      setTimeout(() => process.exit(1), 100);
+    });
+  }
 
   // Register default landing route
   const defaultRoute = {
@@ -395,13 +401,7 @@ const vibe = (config = {}) => {
       host = undefined;
     }
 
-    const startServer = () => server(options, Number(port), host, callback);
-
-    if (config.autoRestart) {
-      clusterize(startServer, { workers: 1, restart: true });
-    } else {
-      startServer();
-    }
+    server(options, Number(port), host, callback);
   }
 
   /**
@@ -435,15 +435,25 @@ const vibe = (config = {}) => {
       ...options.decorators,
     };
 
-    // Execute plugin
+    // Execute plugin — invoke fn() synchronously first so all route
+    // registrations that happen synchronously inside the plugin use the
+    // correct prefix.  Restore currentPrefix IMMEDIATELY after the call
+    // (before any await) so that concurrent un-awaited register() calls
+    // from the caller cannot inherit this plugin's prefix.
+    let result;
     try {
-      const result = fn(scopedApp, opts);
-      if (result && result.then) {
-        await result;
-      }
+      result = fn(scopedApp, opts);
     } finally {
-      // Restore prefix
+      // Restore prefix synchronously — this is the critical fix.
+      // If fn() is async its routes should already be registered
+      // synchronously at the top of the function; the await below is
+      // only needed to propagate rejections.
       currentPrefix = previousPrefix;
+    }
+
+    // Await async plugins for error propagation only (prefix already restored)
+    if (result && typeof result.then === "function") {
+      await result;
     }
   }
 
@@ -630,3 +640,6 @@ export {
 export { LRUCache, cacheMiddleware } from "./utils/scaling/cache.js";
 export { Pool, createPool } from "./utils/scaling/pool.js";
 export { parseJsonStream } from "./utils/core/parser.js";
+export { rateLimit } from "./utils/scaling/rate-limit.js";
+export { cors } from "./utils/helpers/cors.js";
+

@@ -50,6 +50,8 @@ npm install vibe-gx
 | 🎨 **Decorators**             | Extend app, request, and response                          |
 | ⚡ **Cluster Mode**           | Built-in multi-process scaling                             |
 | 💾 **LRU Cache**              | Built-in response caching with ETag                        |
+| 🛡️ **Rate Limiting**          | Built-in sliding window rate limiter — no dependencies     |
+| 🌐 **CORS**                   | Built-in CORS with preflight handling — no dependencies    |
 | 🔗 **Connection Pool**        | Generic pool for databases                                 |
 | 📂 **File Uploads**           | Multipart uploads with size/type validation                |
 | 🌊 **Streaming**              | Large file uploads without buffering                       |
@@ -474,14 +476,60 @@ Use any Express middleware with the adapter:
 
 ```javascript
 import vibe, { adapt } from "vibe-gx";
-import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 
-app.plugin(adapt(cors()));
 app.plugin(adapt(helmet()));
 app.plugin(adapt(compression()));
 ```
+
+> **Note:** Vibe ships with a native `cors()` helper. No need to adapt the `cors` npm package.
+
+---
+
+## 🛡️ Rate Limiting
+
+Built-in sliding window rate limiter — no external dependencies:
+
+```javascript
+import vibe, { rateLimit } from "vibe-gx";
+
+const app = vibe();
+
+// Global limit: 100 requests per minute per IP
+app.plugin(rateLimit({ max: 100, window: 60_000 }));
+
+// Per-route: tight limit on login (brute force protection)
+app.post(
+  "/auth/login",
+  { intercept: rateLimit({ max: 5, window: 60_000 }) },
+  handler,
+);
+```
+
+Sets `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `Retry-After` headers automatically.
+
+---
+
+## 🌐 CORS
+
+Built-in CORS with automatic preflight handling — no external dependencies:
+
+```javascript
+import vibe, { cors } from "vibe-gx";
+
+const app = vibe();
+
+app.plugin(
+  cors({
+    origin: "https://myapp.com",
+    credentials: true,
+    maxAge: 86_400, // cache preflight for 24 hours
+  }),
+);
+```
+
+Supports wildcard, single origin, array of origins, and dynamic origin functions.
 
 ---
 
@@ -602,18 +650,18 @@ app.post(
 
 ### Request (`req`)
 
-| Property      | Description                |
-| :------------ | :------------------------- |
-| `req.id`      | Auto-generated UUID logic  |
-| `req.log`     | Context-bound logger API   |
-| `req.params`  | Route parameters (`:id`)   |
-| `req.query`   | Query string (`?page=1`)   |
-| `req.body`    | Parsed JSON/form body      |
-| `req.files`   | Uploaded files (multipart) |
-| `req.ip`      | Client IP address          |
-| `req.method`  | HTTP method                |
-| `req.url`     | Request URL                |
-| `req.headers` | Request headers            |
+| Property      | Description                                              |
+| :------------ | :------------------------------------------------------- |
+| `req.id`      | Lazy UUID — generated only on first access               |
+| `req.log`     | Lazy context-bound logger — created only on first access |
+| `req.params`  | Route parameters (`:id`)                                 |
+| `req.query`   | Query string (`?page=1`)                                 |
+| `req.body`    | Parsed JSON/form body                                    |
+| `req.files`   | Uploaded files (multipart)                               |
+| `req.ip`      | Real client IP — proxy-aware (`x-forwarded-for` first)   |
+| `req.method`  | HTTP method                                              |
+| `req.url`     | Request URL (pathname only, query stripped)              |
+| `req.headers` | Request headers                                          |
 
 ### Response (`res`)
 
@@ -664,6 +712,18 @@ app.post(
 | `pool.use(fn)`     | Use with auto-release  |
 | `pool.close()`     | Close pool             |
 | `pool.stats`       | Get pool statistics    |
+
+### Rate Limit Utilities
+
+| Function          | Description                          |
+| :---------------- | :----------------------------------- |
+| `rateLimit(opts)` | Create a sliding window rate limiter |
+
+### CORS Utilities
+
+| Function      | Description               |
+| :------------ | :------------------------ |
+| `cors(opts?)` | Create a CORS interceptor |
 
 ---
 

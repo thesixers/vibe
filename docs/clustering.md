@@ -26,19 +26,17 @@ cluster(() => {
 
 Vibe automatically forks one worker per CPU core. On an 8-core machine you get 8 worker processes all sharing port `3000`.
 
-## Auto-Restart Mode
+## Crash Recovery
 
-Instead of manually wrapping your application with `cluster`, Vibe provides an out-of-the-box convenience toggle. Passing `autoRestart: true` into Vibe's config automatically spawns a managed 1-worker cluster. If your server crashes due to an unhandled error, Vibe will seamlessly restart it.
+Vibe does not handle crash recovery internally. Use a process manager like **PM2** for production deployments — it restarts your process on crash, provides logs, and integrates cleanly with Vibe's graceful shutdown:
 
-```js
-const app = vibe({
-  autoRestart: true, // Native crash recovery
-});
-
-app.listen(3000);
+```bash
+npm install -g pm2
+pm2 start server.js --name my-app
+pm2 save
 ```
 
-This is perfect for simple setups that need resilient high availability but don't need a full multi-core spread.
+This keeps memory usage lean — no hidden processes spawned inside your app.
 
 ## `cluster(workerFn, options?)`
 

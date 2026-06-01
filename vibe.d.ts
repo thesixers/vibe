@@ -219,8 +219,6 @@ export interface LoggerAPI {
 export interface VibeConfig {
   /** Configuration for the native Vibe terminal logger */
   logger?: LoggerConfig | boolean;
-  /** Enable automatic process restarting on crash. Spawns an internal cluster manager. Default: false */
-  autoRestart?: boolean;
 }
 
 // ==========================================
@@ -647,6 +645,98 @@ export function parseJsonStream(
   onEnd?: () => void,
   onError?: (err: Error) => void,
 ): void;
+
+// ==========================================
+// Rate Limiting
+// ==========================================
+
+export interface RateLimitOptions {
+  /** Maximum number of requests allowed per window */
+  max: number;
+  /** Window duration in milliseconds. Default: 60000 (1 minute) */
+  window?: number;
+  /**
+   * Custom function to derive the rate limit key from the request.
+   * Defaults to req.ip.
+   * @example keyBy: (req) => req.headers["authorization"] // limit per token
+   */
+  keyBy?: (req: VibeRequest) => string;
+  /** Custom message sent when limit is exceeded. Default: "Too Many Requests" */
+  message?: string;
+  /** HTTP status code when limit is exceeded. Default: 429 */
+  statusCode?: number;
+  /**
+   * Function to skip rate limiting for certain requests.
+   * Return true to bypass the limiter.
+   * @example skip: (req) => req.ip === "127.0.0.1"
+   */
+  skip?: (req: VibeRequest) => boolean;
+}
+
+/**
+ * Creates a sliding window rate limiter interceptor.
+ *
+ * Works as a global plugin or a per-route interceptor.
+ * Sets X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset headers.
+ * Returns 429 with a Retry-After header when the limit is exceeded.
+ *
+ * @example
+ * // Global rate limit
+ * import { rateLimit } from "vibe-gx";
+ * app.plugin(rateLimit({ max: 100, window: 60_000 }));
+ *
+ * @example
+ * // Per-route (tight limit on login)
+ * app.post("/auth/login", { intercept: rateLimit({ max: 5, window: 60_000 }) }, handler);
+ */
+export function rateLimit(options: RateLimitOptions): Interceptor;
+
+// ==========================================
+// CORS
+// ==========================================
+
+export interface CorsOptions {
+  /**
+   * Allowed origin(s). Can be:
+   * - `"*"` to allow all origins
+   * - A single origin string e.g. `"https://myapp.com"`
+   * - An array of allowed origins
+   * - A function `(origin: string) => boolean` for dynamic allow/deny
+   * Default: `"*"`
+   */
+  origin?: string | string[] | ((origin: string) => boolean);
+  /** Allowed HTTP methods. Default: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS */
+  methods?: string[];
+  /** Headers the browser is allowed to send. Default: Content-Type, Authorization */
+  allowedHeaders?: string[];
+  /** Headers exposed to the browser in the response */
+  exposedHeaders?: string[];
+  /** Allow cookies and Authorization headers. Default: false */
+  credentials?: boolean;
+  /** Seconds to cache the preflight response. Reduces OPTIONS calls from the browser */
+  maxAge?: number;
+}
+
+/**
+ * Creates a CORS interceptor.
+ *
+ * Handles OPTIONS preflight requests automatically and sets
+ * Access-Control-* headers on every cross-origin response.
+ *
+ * @example
+ * import { cors } from "vibe-gx";
+ *
+ * // Allow all origins
+ * app.plugin(cors());
+ *
+ * // Specific origin with credentials
+ * app.plugin(cors({ origin: "https://myapp.com", credentials: true }));
+ *
+ * // Multiple origins
+ * app.plugin(cors({ origin: ["https://myapp.com", "https://admin.myapp.com"] }));
+ */
+export function cors(options?: CorsOptions): Interceptor;
+
 
 // ==========================================
 // Express Middleware Adapter

@@ -90,15 +90,35 @@ async function server(options, port, host, callback) {
 
   // Main request handler - ULTRA OPTIMIZED
   function reqListener(req, res) {
-    req.id = crypto.randomUUID();
-    req.log = options.logger.child({ reqId: req.id });
+    // Lazy req.id and req.log — UUID and child logger are only created
+    // on first access. Routes that don't log or need an ID pay zero cost.
+    let _reqId = null;
+    let _reqLog = null;
+    Object.defineProperty(req, "id", {
+      get() {
+        if (_reqId === null) _reqId = crypto.randomUUID();
+        return _reqId;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(req, "log", {
+      get() {
+        if (_reqLog === null)
+          _reqLog = options.logger.child({ reqId: req.id });
+        return _reqLog;
+      },
+      configurable: true,
+    });
 
     if (options.loggerConfig && options.loggerConfig.lifecycle) {
       req.startTime = Date.now();
 
       // Determine sender IP early for logging
       const sender =
-        req.socket.remoteAddress || req.headers["x-forwarded-for"] || "unknown";
+        req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+        req.headers["x-real-ip"] ||
+        req.socket.remoteAddress ||
+        "unknown";
 
       req.log.info(
         { type: "req", url: req.url, method: req.method, sender },
@@ -128,6 +148,12 @@ async function server(options, port, host, callback) {
     req._parsedQuery = undefined;
 
     req.url = pathname;
+
+    // Resolve real client IP once — proxy-aware, available on ALL paths
+    req.ip =
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+      req.headers["x-real-ip"] ||
+      req.socket.remoteAddress;
 
     // Stamp response with options ref (ONLY per-request cost for response methods)
     res._vibeOptions = options;
@@ -215,10 +241,7 @@ async function server(options, port, host, callback) {
       if (!(await runIntercept(interceptors, req, res))) return;
     }
 
-    // Lazy IP
-    if (!req.ip) {
-      req.ip = req.socket.remoteAddress || req.headers["x-forwarded-for"];
-    }
+    // Lazy IP already resolved in reqListener — no-op needed here
 
     // Route matching - FAST PATH first
     const routeKey = req.method + pathname;
