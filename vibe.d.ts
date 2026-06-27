@@ -163,6 +163,26 @@ export interface RouteOptions {
 }
 
 /**
+ * Options for cookie serialization.
+ */
+export interface CookieOptions {
+  /** Max age in seconds. Takes priority over expires. */
+  maxAge?: number;
+  /** Expiry date */
+  expires?: Date;
+  /** Cookie path. Default: "/" */
+  path?: string;
+  /** Cookie domain */
+  domain?: string;
+  /** Send only over HTTPS */
+  secure?: boolean;
+  /** Inaccessible to client-side JavaScript */
+  httpOnly?: boolean;
+  /** SameSite policy */
+  sameSite?: "Strict" | "Lax" | "None";
+}
+
+/**
  * Options for registering a plugin.
  */
 export interface RegisterOptions {
@@ -239,6 +259,8 @@ export interface VibeRequest extends IncomingMessage {
   files?: UploadedFile[];
   /** Real client IP — first entry from x-forwarded-for, x-real-ip, or socket address */
   ip?: string;
+  /** Parsed cookies from the Cookie header (lazily evaluated on first access) */
+  cookies: Record<string, string>;
   /** Automatically generated UUID for the request lifecycle */
   id: string;
   /** Context-bound logger automatically stamped with the req.id constraint */
@@ -263,6 +285,21 @@ export interface VibeResponse extends ServerResponse {
   ) => void;
   sendHtml: (filename: string) => void;
   redirect: (url: string, code?: number) => void;
+
+  /**
+   * Sets a cookie on the response. Chainable.
+   * @example
+   * res.setCookie("token", "abc", { httpOnly: true, secure: true, maxAge: 3600 });
+   * res.setCookie("a", "1").setCookie("b", "2"); // multiple cookies
+   */
+  setCookie(name: string, value: string, options?: CookieOptions): VibeResponse;
+
+  /**
+   * Clears a cookie by expiring it immediately.
+   * @example
+   * res.clearCookie("token");
+   */
+  clearCookie(name: string, options?: Omit<CookieOptions, "maxAge" | "expires">): VibeResponse;
 
   /** Sends a 200 OK response with a success message */
   success: (data?: any, message?: string) => void;

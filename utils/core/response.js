@@ -254,6 +254,48 @@ const vibeResponseMethods = {
   },
 
   /**
+   * Sets a cookie on the response.
+   * Chainable — supports multiple cookies: res.setCookie("a","1").setCookie("b","2")
+   * @param {string} name - Cookie name
+   * @param {string} value - Cookie value (will be URI-encoded)
+   * @param {Object} [options]
+   * @param {number} [options.maxAge] - Max age in seconds
+   * @param {Date} [options.expires] - Expiry date
+   * @param {string} [options.path="/"] - Cookie path
+   * @param {string} [options.domain] - Cookie domain
+   * @param {boolean} [options.secure] - HTTPS only
+   * @param {boolean} [options.httpOnly] - Inaccessible to JS
+   * @param {"Strict"|"Lax"|"None"} [options.sameSite] - SameSite policy
+   * @returns {this}
+   */
+  setCookie(name, value, options = {}) {
+    let cookie = `${name}=${encodeURIComponent(value)}`;
+    if (options.maxAge != null)          cookie += `; Max-Age=${options.maxAge}`;
+    if (options.expires instanceof Date) cookie += `; Expires=${options.expires.toUTCString()}`;
+    cookie += `; Path=${options.path ?? "/"}`;
+    if (options.domain)   cookie += `; Domain=${options.domain}`;
+    if (options.secure)   cookie += "; Secure";
+    if (options.httpOnly) cookie += "; HttpOnly";
+    if (options.sameSite) cookie += `; SameSite=${options.sameSite}`;
+
+    const existing = this.getHeader("Set-Cookie");
+    if (Array.isArray(existing))  this.setHeader("Set-Cookie", [...existing, cookie]);
+    else if (existing)             this.setHeader("Set-Cookie", [existing, cookie]);
+    else                           this.setHeader("Set-Cookie", cookie);
+    return this;
+  },
+
+  /**
+   * Clears a cookie by immediately expiring it.
+   * @param {string} name - Cookie name
+   * @param {Object} [options] - Same options as setCookie (except maxAge/expires)
+   * @returns {this}
+   */
+  clearCookie(name, options = {}) {
+    return this.setCookie(name, "", { ...options, maxAge: 0, expires: new Date(0) });
+  },
+
+  /**
    * Redirects the client to another URL.
    * @param {string} url
    * @param {number} [status=302]

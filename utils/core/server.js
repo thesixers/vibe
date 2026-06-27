@@ -110,6 +110,25 @@ async function server(options, port, host, callback) {
       configurable: true,
     });
 
+    // Lazy req.cookies — parsed once on first access, zero cost if unused
+    Object.defineProperty(req, "cookies", {
+      get() {
+        if (this._parsedCookies !== undefined) return this._parsedCookies;
+        const header = this.headers["cookie"];
+        if (!header) return (this._parsedCookies = {});
+        const cookies = {};
+        for (const pair of header.split(";")) {
+          const idx = pair.indexOf("=");
+          if (idx < 0) continue;
+          const key = pair.slice(0, idx).trim();
+          const val = pair.slice(idx + 1).trim();
+          if (key) cookies[key] = decodeURIComponent(val);
+        }
+        return (this._parsedCookies = cookies);
+      },
+      configurable: true,
+    });
+
     if (options.loggerConfig && options.loggerConfig.lifecycle) {
       req.startTime = Date.now();
 

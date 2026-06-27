@@ -13,6 +13,7 @@ Every route handler receives `req` as its first argument. Vibe extends the nativ
 | `req.id`      | `string`                 | Auto-generated UUID for this request        |
 | `req.log`     | `LoggerAPI`              | Context-bound logger (tagged with `req.id`) |
 | `req.ip`      | `string`                 | Client IP address                           |
+| `req.cookies` | `Record<string, string>` | Parsed cookies from the `Cookie` header     |
 | `req.method`  | `string`                 | HTTP method (`GET`, `POST`, etc.)           |
 | `req.url`     | `string`                 | Request pathname (without query string)     |
 | `req.headers` | `IncomingHttpHeaders`    | All request headers                         |
@@ -114,6 +115,20 @@ app.get("/whoami", (req) => {
 ```
 
 Vibe also respects the `x-forwarded-for` header when behind a proxy.
+
+## Cookies (`req.cookies`)
+
+Parsed lazily on first access. Key-value pairs are automatically decoded:
+
+```js
+app.get("/profile", (req) => {
+  // Incoming Header: Cookie: theme=midnight; user=joe
+  console.log(req.cookies.theme); // "midnight"
+  console.log(req.cookies.user);  // "joe"
+});
+```
+
+See [Response Cookies](./response.md#cookies) to learn how to set/clear cookies.
 
 ## Raw Headers
 

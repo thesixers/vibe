@@ -68,6 +68,51 @@ res.redirect("/new-path", 301); // 301 permanent
 
 ---
 
+## Cookies
+
+### `res.setCookie(name, value, options?)`
+
+Sets a cookie on the response. Chainable to set multiple cookies.
+
+*   `name` (`string`): The cookie name.
+*   `value` (`string`): The cookie value (automatically URI-encoded).
+*   `options` (`CookieOptions`):
+    *   `maxAge` (`number`): Max age in seconds.
+    *   `expires` (`Date`): Expiration date.
+    *   `path` (`string`): Path (defaults to `/`).
+    *   `domain` (`string`): Domain.
+    *   `secure` (`boolean`): HTTPS only.
+    *   `httpOnly` (`boolean`): Inaccessible to client-side JS.
+    *   `sameSite` (`"Strict" | "Lax" | "None"`): SameSite policy.
+
+```js
+app.post("/login", (req, res) => {
+  res.setCookie("session", "xyz987", {
+    httpOnly: true,
+    secure: true,
+    maxAge: 3600,
+  });
+  return { success: true };
+});
+
+// Setting multiple cookies (chainable)
+res.setCookie("theme", "midnight")
+   .setCookie("consent", "true");
+```
+
+### `res.clearCookie(name, options?)`
+
+Expires a cookie immediately by setting its `Max-Age` to `0` and expiration to the past. The `options` should match the path/domain used when setting the cookie.
+
+```js
+app.post("/logout", (req, res) => {
+  res.clearCookie("session");
+  return { success: true };
+});
+```
+
+---
+
 ## Semantic HTTP Methods
 
 These pre-built methods set the status code and response body automatically.
