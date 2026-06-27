@@ -44,6 +44,22 @@ app.plugin((req, res) => {
   console.log(`  📥 ${req.method} ${req.url}`);
 });
 
+// Setup cookie test routes
+app.get("/cookies/set", (req, res) => {
+  res.setCookie("theme", "midnight")
+     .setCookie("session", "xyz987", { httpOnly: true, secure: true, maxAge: 3600 });
+  return { ok: true };
+});
+
+app.get("/cookies/get", (req, res) => {
+  return { cookies: req.cookies };
+});
+
+app.get("/cookies/clear", (req, res) => {
+  res.clearCookie("session");
+  return { ok: true };
+});
+
 // Helper to make HTTP requests
 function request(method, path, body = null, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -60,9 +76,9 @@ function request(method, path, body = null, headers = {}) {
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
         try {
-          resolve({ status: res.statusCode, body: JSON.parse(data) });
+          resolve({ status: res.statusCode, body: JSON.parse(data), headers: res.headers });
         } catch {
-          resolve({ status: res.statusCode, body: data });
+          resolve({ status: res.statusCode, body: data, headers: res.headers });
         }
       });
     });
@@ -137,6 +153,45 @@ async function runTests() {
   console.log("\n📋 Test 8: 404 GET /nonexistent");
   res = await request("GET", "/nonexistent");
   assert(res.status === 404, "Status 404", `got ${res.status}`);
+
+  // Test 9: setCookie
+  console.log("\n📋 Test 9: setCookie GET /cookies/set");
+  res = await request("GET", "/cookies/set");
+  assert(res.status === 200, "Status 200");
+  const setCookieHeader = res.headers["set-cookie"];
+  assert(Array.isArray(setCookieHeader), "Set-Cookie header is an array");
+  assert(setCookieHeader && setCookieHeader.length === 2, "Two cookies set");
+  assert(
+    setCookieHeader && setCookieHeader[0].startsWith("theme=midnight"),
+    "First cookie theme set correctly",
+    `got ${setCookieHeader ? setCookieHeader[0] : null}`
+  );
+  assert(
+    setCookieHeader && setCookieHeader[1].includes("session=xyz987") && setCookieHeader[1].includes("HttpOnly") && setCookieHeader[1].includes("Secure"),
+    "Second cookie session set with options correctly",
+    `got ${setCookieHeader ? setCookieHeader[1] : null}`
+  );
+
+  // Test 10: getCookies (reading req.cookies)
+  console.log("\n📋 Test 10: getCookies GET /cookies/get");
+  res = await request("GET", "/cookies/get", null, {
+    Cookie: "theme=midnight; session=xyz987; user=joe"
+  });
+  assert(res.status === 200, "Status 200");
+  assert(res.body.cookies?.theme === "midnight", "Parsed cookie theme matches");
+  assert(res.body.cookies?.session === "xyz987", "Parsed cookie session matches");
+  assert(res.body.cookies?.user === "joe", "Parsed cookie user matches");
+
+  // Test 11: clearCookie
+  console.log("\n📋 Test 11: clearCookie GET /cookies/clear");
+  res = await request("GET", "/cookies/clear");
+  assert(res.status === 200, "Status 200");
+  const clearCookieHeader = res.headers["set-cookie"];
+  assert(
+    clearCookieHeader && clearCookieHeader.includes("session=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/"),
+    "Session cookie cleared correctly",
+    `got ${clearCookieHeader}`
+  );
 
   // Summary
   console.log("\n" + "=".repeat(50));
