@@ -237,10 +237,8 @@ export interface VibeRequest extends IncomingMessage {
   body: Record<string, any>;
   /** Uploaded files array (if multipart/form-data) */
   files?: UploadedFile[];
-  /** Client IP address */
+  /** Real client IP — first entry from x-forwarded-for, x-real-ip, or socket address */
   ip?: string;
-  /** Detailed client IP info */
-  fullIp?: string;
   /** Automatically generated UUID for the request lifecycle */
   id: string;
   /** Context-bound logger automatically stamped with the req.id constraint */
@@ -302,9 +300,58 @@ export type Interceptor = (
   res: VibeResponse,
 ) => boolean | void | Promise<boolean | void>;
 
+/**
+ * Scoped app interface passed to register() plugin callbacks.
+ * A subset of VibeApp — excludes server-level methods that make no sense
+ * inside an encapsulated plugin (listen, logRoutes, setPublicFolder, include).
+ */
+export interface ScopedVibeApp {
+  get: RouteRegistrar;
+  post: RouteRegistrar;
+  put: RouteRegistrar;
+  del: RouteRegistrar;
+  patch: RouteRegistrar;
+  head: RouteRegistrar;
+
+  /** Register a global interceptor within this plugin scope */
+  plugin: (interceptor: Interceptor) => void;
+
+  /** Register a nested plugin */
+  register: (fn: PluginCallback, opts?: RegisterOptions) => Promise<void>;
+
+  /** Decorate the app with a custom property */
+  decorate: (name: string, value: any) => void;
+
+  /** Decorate request objects with a custom property */
+  decorateRequest: (name: string, value: any) => void;
+
+  /** Decorate response objects with a custom property */
+  decorateReply: (name: string, value: any) => void;
+
+  /** Override the error handler for this plugin scope */
+  setErrorHandler: (
+    fn: (error: Error, req: VibeRequest, res: VibeResponse) => void,
+  ) => void;
+
+  /** Structured logger — app.log.info(), .warn(), .error() etc. */
+  log: LoggerAPI;
+
+  /** Alias for log */
+  logger: LoggerAPI;
+
+  /** Legacy colorized string logger */
+  logLegacy: (
+    value: any,
+    typeOrColor?: ColorName | "info" | "error" | "warn" | "req",
+  ) => void;
+
+  /** Any decorators registered via decorate() are available as direct properties */
+  [key: string]: any;
+}
+
 /** Plugin callback function (Fastify-style) */
 export type PluginCallback = (
-  app: VibeApp,
+  app: ScopedVibeApp,
   opts: RegisterOptions,
 ) => void | Promise<void>;
 
@@ -391,11 +438,23 @@ export interface RouterAPI {
   head: RouteRegistrar;
 
   /**
-   * Log helper supporting native colors and Vibe-stylized log levels
-   * @param value The message or object to log
-   * @param typeOrColor Optional color name (e.g. 'green') or level ('info', 'warn', 'error', 'req')
+   * Pino/Fastify-compatible structured logger.
+   * Available inside both `app.register()` plugins and `app.include()` sub-routers.
+   * @example
+   * api.log.info("Route registered");
+   * api.log.warn({ userId: 1 }, "Slow query");
    */
-  log: (
+  log: LoggerAPI;
+
+  /** Alias for `log` — consistent with `app.logger` */
+  logger: LoggerAPI;
+
+  /**
+   * Legacy colorized string logger (plain terminal output).
+   * @param value The message to log
+   * @param typeOrColor Optional color name (e.g. 'green', 'red')
+   */
+  logLegacy: (
     value: any,
     typeOrColor?: ColorName | "info" | "error" | "warn" | "req",
   ) => void;
@@ -487,6 +546,17 @@ export interface VibeApp extends RouterAPI {
 
   /** Alias for `app.log` */
   logger: LoggerAPI;
+
+  /**
+   * Legacy colorized string logger (plain terminal output).
+   * Bypasses the Pino JSON interface — for simple dev-time messages.
+   * @param value The message to log
+   * @param typeOrColor Optional color name (e.g. 'green', 'red')
+   */
+  logLegacy: (
+    value: any,
+    typeOrColor?: ColorName | "info" | "error" | "warn" | "req",
+  ) => void;
 }
 
 /**
@@ -759,11 +829,3 @@ export function adapt(
   mw: (req: any, res: any, next: (err?: any) => void) => void,
 ): Interceptor;
 
-/**
- * Adapt multiple Express middlewares at once.
- * @param middlewares - Express middleware functions
- * @returns Array of Vibe-compatible interceptors
- */
-export function adaptAll(
-  ...middlewares: Array<(req: any, res: any, next: (err?: any) => void) => void>
-): Interceptor[];

@@ -103,7 +103,7 @@ function parseMultipart(req, res, media, options, resolve, reject) {
       },
     });
   } catch (err) {
-    console.error("Busboy init failed:", err);
+    options.logger?.error(err, "[VIBE] Busboy init failed");
     return resolve();
   }
 
@@ -152,7 +152,10 @@ function parseMultipart(req, res, media, options, resolve, reject) {
       media.public &&
       !dest.startsWith(path.resolve(options.publicFolder || ""))
     ) {
-      console.warn("Attempted upload outside public folder, skipping");
+      options.logger?.warn(
+        { dest, publicFolder: options.publicFolder },
+        "[VIBE] Attempted upload outside public folder, skipping",
+      );
       pendingWrites--;
       checkComplete();
       return file.resume();
@@ -161,7 +164,7 @@ function parseMultipart(req, res, media, options, resolve, reject) {
     try {
       if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
     } catch (err) {
-      console.error("Failed to create upload folder:", err);
+      options.logger?.error(err, "[VIBE] Failed to create upload folder");
       pendingWrites--;
       checkComplete();
       return file.resume();
@@ -200,14 +203,14 @@ function parseMultipart(req, res, media, options, resolve, reject) {
     });
 
     file.on("error", (err) => {
-      console.error("File stream error:", err);
+      options.logger?.error(err, "[VIBE] File stream error");
       writeStream.end();
       pendingWrites--;
       checkComplete();
     });
 
     writeStream.on("error", (err) => {
-      console.error("Write stream error:", err);
+      options.logger?.error(err, "[VIBE] Write stream error");
       file.resume();
       pendingWrites--;
       checkComplete();
@@ -231,7 +234,7 @@ function parseMultipart(req, res, media, options, resolve, reject) {
   });
 
   bb.on("error", (err) => {
-    console.error("Busboy error:", err);
+    options.logger?.error(err, "[VIBE] Busboy error");
     req.unpipe(bb);
     reject(err);
   });
@@ -266,7 +269,10 @@ function parseJson(req, res, media, options, resolve, reject) {
   req.on("data", (chunk) => {
     body += chunk;
     if (body.length > limit) {
-      console.warn("JSON payload too large, destroying connection");
+      options.logger?.warn(
+        { limit, received: body.length },
+        "[VIBE] JSON payload too large, destroying connection",
+      );
       req.destroy();
     }
   });

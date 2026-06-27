@@ -243,7 +243,12 @@ const vibeResponseMethods = {
    * @param {Error} error
    */
   serverError(error) {
-    console.error(error);
+    const logger = this._vibeOptions?.logger;
+    if (logger) {
+      logger.error(error, "[VIBE] Internal server error");
+    } else {
+      console.error(error);
+    }
     this.writeHead(500, JSON_CT);
     this.end(RESPONSES.serverError);
   },

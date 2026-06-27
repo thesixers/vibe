@@ -52,7 +52,7 @@ async function runTests() {
 
   await test("Logger cleanly prefixes basic log styles", async () => {
     stream.clear();
-    const logger = createLogger({ stream });
+    const logger = createLogger({ stream, prettyPrint: false });
     logger.info("Hello world");
 
     const lines = stream.getLines();
@@ -65,7 +65,7 @@ async function runTests() {
 
   await test("Logger JSON formats Error objects with stack automatically", async () => {
     stream.clear();
-    const logger = createLogger({ stream });
+    const logger = createLogger({ stream, prettyPrint: false });
     const err = new Error("Something broke");
     logger.error(err);
 
@@ -78,7 +78,7 @@ async function runTests() {
 
   await test("Child logger merges bindings natively into context", async () => {
     stream.clear();
-    const parent = createLogger({ bindings: { app: "vibe" }, stream });
+    const parent = createLogger({ bindings: { app: "vibe" }, stream, prettyPrint: false });
     const child = parent.child({ reqId: "123" });
 
     child.info("Test");
@@ -91,11 +91,9 @@ async function runTests() {
   console.log("\n📋 2. Server Integration\n");
 
   await test("Lifecycle requests generate fastify json styling natively", async () => {
-    stream.clear();
-
     // Create actual vibe app with our stream logger and lifecycle=true
     const app = vibe({
-      logger: { lifecycle: true, stream },
+      logger: { lifecycle: true, stream, prettyPrint: false },
     });
 
     app.get("/test", (req, res) => {
@@ -103,14 +101,18 @@ async function runTests() {
       return new Error("Fastify return error intercept!");
     });
 
+    // Clear stream inside listen callback — AFTER startup logs (route strategy banner etc.) fire
     const server = await new Promise((resolve) => {
-      const s = app.listen(8765, "127.0.0.1", () => resolve(s));
+      const s = app.listen(8765, "127.0.0.1", () => {
+        stream.clear();
+        resolve(s);
+      });
     });
 
     // Make request
     const res = await fetch("http://127.0.0.1:8765/test");
 
-    // Close server
+    // Wait for finish event to fire
     await new Promise((r) => setTimeout(r, 50));
 
     const lines = stream.getLines();

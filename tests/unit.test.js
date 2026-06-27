@@ -118,6 +118,21 @@ async function nestedPlugin(app, opts) {
 await app.register(apiPlugin, { prefix: "/api" });
 await app.register(nestedPlugin, { prefix: "/api/v2" });
 
+// Regression test: api.log must be the structured logger, not the legacy fn
+let logCallSucceeded = false;
+await app.register(async (api) => {
+  assert(typeof api.log.info === "function", "api.log.info is callable inside register()");
+  assert(typeof api.log.warn === "function", "api.log.warn is callable inside register()");
+  assert(typeof api.log.error === "function", "api.log.error is callable inside register()");
+  try {
+    api.log.info("[VIBE] Regression test — api.log inside register()");
+    logCallSucceeded = true;
+  } catch {
+    logCallSucceeded = false;
+  }
+});
+assert(logCallSucceeded, "api.log.info call does not throw inside register()");
+
 assert(typeof app.register === "function", "register method exists");
 assert(true, "Plugin with prefix registered");
 assert(true, "Nested plugin registered");

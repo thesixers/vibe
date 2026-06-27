@@ -9,6 +9,7 @@ const LOG_LEVELS = {
   warn: 40,
   error: 50,
   fatal: 60,
+  silent: 100, // Higher than all levels — suppresses all output (logger: false)
 };
 
 const LEVEL_NAMES = {
@@ -136,45 +137,59 @@ export class Logger {
   _printPretty(log) {
     const time = new Date(log.time).toLocaleTimeString();
     const lvlName = LEVEL_NAMES[log.level] || "INFO";
-    let prefixC = color.cyan;
-    if (log.level >= 50) prefixC = color.red;
-    else if (log.level === 40) prefixC = color.yellow;
-    else if (log.level <= 20) prefixC = color.dim;
 
-    const prefix = prefixC(`[VIBE ${lvlName} ${time}]`);
-    let context = "";
-    if (log.reqId) {
-      context = `\x1b[90m[${log.reqId}]\x1b[0m `;
-    }
+    const isError = log.level >= 50;
+    const isWarn  = log.level === 40;
+    const isDebug = log.level <= 20;
 
+    // Build context tag (reqId)
+    const context = log.reqId ? `[${log.reqId}] ` : "";
+
+    // Build message content
     let content = log.msg || "";
-    if (log.color && color[log.color]) {
-      content = color[log.color](content);
-    }
-
     if (log.err && log.err.stack) {
-      content += "\n" + prefixC(log.err.stack);
+      content += "\n" + log.err.stack;
     }
 
-    // Attempt to print remaining metadata if it's not standard
+    // Build metadata string (skip standard keys)
     const skipKeys = [
-      "level",
-      "time",
-      "pid",
-      "hostname",
-      "reqId",
-      "msg",
-      "err",
-      "color",
+      "level", "time", "pid", "hostname", "reqId", "msg", "err", "color",
     ];
     let metaStr = "";
     for (const key of Object.keys(log)) {
       if (!skipKeys.includes(key)) {
-        metaStr += ` \x1b[90m${key}=${JSON.stringify(log[key])}\x1b[0m`;
+        metaStr += ` ${key}=${JSON.stringify(log[key])}`;
       }
     }
 
-    this.stream.write(`${prefix} ${context}${content}${metaStr}\n`);
+    const rawPrefix = `[VIBE ${lvlName} ${time}]`;
+
+    if (isError) {
+      // Entire line is red — prefix, context, message, stack, metadata
+      const fullLine = `${rawPrefix} ${context}${content}${metaStr}`;
+      this.stream.write(color.red(fullLine) + "\n");
+    } else if (isWarn) {
+      // Yellow prefix, bright content
+      const coloredContent = log.color && color[log.color]
+        ? color[log.color](content)
+        : color.bright(content);
+      this.stream.write(
+        color.yellow(rawPrefix) + " " + context + coloredContent +
+        (metaStr ? color.dim(metaStr) : "") + "\n",
+      );
+    } else if (isDebug) {
+      // Dim entire line for trace/debug
+      this.stream.write(color.dim(`${rawPrefix} ${context}${content}${metaStr}`) + "\n");
+    } else {
+      // Info — green prefix + bright content (matches [VIBE LOG] style)
+      const coloredContent = log.color && color[log.color]
+        ? color[log.color](content)
+        : color.bright(content);
+      this.stream.write(
+        color.green(rawPrefix) + " " + context + coloredContent +
+        (metaStr ? color.dim(metaStr) : "") + "\n",
+      );
+    }
   }
 }
 

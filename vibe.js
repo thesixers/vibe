@@ -37,7 +37,6 @@ function pathToRegex(path) {
  *     size: number
  *   }>,
  *   ip?: string,
- *   fullIp?: string
  * }} VibeRequest
  */
 
@@ -430,7 +429,10 @@ const vibe = (config = {}) => {
       decorateRequest,
       decorateReply,
       register,
-      log,
+      log: appLogger,        // Structured logger (api.log.info / warn / error etc.)
+      logger: appLogger,     // Alias — consistent with root app.logger
+      logLegacy: log,        // Legacy colorized string logger (api.logLegacy(msg, color))
+      setErrorHandler: (fn) => { options.errorHandler = fn; },
       // Expose decorators
       ...options.decorators,
     };
@@ -486,7 +488,9 @@ const vibe = (config = {}) => {
       del: wrap("DELETE"),
       patch: wrap("PATCH"),
       head: wrap("HEAD"),
-      log,
+      log: appLogger,    // Structured logger — consistent with app.log
+      logger: appLogger, // Alias
+      logLegacy: log,    // Legacy colorized string logger
       plugin,
     };
   }

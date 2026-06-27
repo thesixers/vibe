@@ -319,8 +319,14 @@ async function server(options, port, host, callback) {
     getNetworkIP(mainHost, port);
 
     const strategy = useTrieMatching ? "Trie (O(log n))" : "Linear (O(n))";
-    console.log(
-      `[VIBE] Route matching: ${strategy} (${options.routeCount} routes, ${staticRoutes.size} static, threshold: ${options.trieThreshold})`,
+    options.logger.info(
+      {
+        strategy,
+        routeCount: options.routeCount,
+        staticRoutes: staticRoutes.size,
+        trieThreshold: options.trieThreshold,
+      },
+      "[VIBE] Route matching strategy initialized",
     );
 
     if (callback) callback();
