@@ -175,6 +175,7 @@ const vibe = (config = {}) => {
     logger: appLogger,
     loggerConfig,
     errorHandler: handleError,
+    genReqId: config.genReqId,
   };
 
   // Register global process listeners once only (prevents listener leak
@@ -196,18 +197,21 @@ const vibe = (config = {}) => {
     });
   }
 
-  // Register default landing route
-  const defaultRoute = {
-    method: "GET",
-    path: "/",
-    pathRegex: /^\/$/,
-    handler: (req, res) => res.sendHtml("vibe.html"),
-    intercept: null,
-    media: { public: true, dest: null, maxSize: 10 * 1024 * 1024 },
-  };
-  trie.insert("GET", "/", defaultRoute);
-  routes.push(defaultRoute);
-  options.routeCount = 1;
+  // Helper for lazy trie insertion
+  function _addRoute(route) {
+    routes.push(route);
+    options.routeCount++;
+    
+    if (options.routeCount === options.trieThreshold) {
+      // Just crossed threshold: backfill all existing routes into the trie
+      for (let i = 0; i < routes.length; i++) {
+        trie.insert(routes[i].method, routes[i].path, routes[i]);
+      }
+    } else if (options.routeCount > options.trieThreshold) {
+      // Already crossed: insert new route into trie immediately
+      trie.insert(route.method, route.path, route);
+    }
+  }
 
   // Current prefix for scoped routes (used in register)
   let currentPrefix = "";
@@ -275,16 +279,18 @@ const vibe = (config = {}) => {
       route.pathRegex = /^\/$/;
       route.isStatic = true;
       finalizeRoute(route);
-      trie.insert(method, "/", route);
       staticRoutes.set(method + "/", route);
       // Update existing root route in routes array
       const rootIdx = routes.findIndex(
         (r) => r.path === "/" && r.method === method,
       );
-      if (rootIdx >= 0) routes[rootIdx] = route;
-      else {
-        routes.push(route);
-        options.routeCount++;
+      if (rootIdx >= 0) {
+        routes[rootIdx] = route;
+        if (options.routeCount >= options.trieThreshold) {
+          trie.insert(method, "/", route);
+        }
+      } else {
+        _addRoute(route);
       }
       return;
     }
@@ -311,12 +317,12 @@ const vibe = (config = {}) => {
       route.handler = opts;
     }
 
-    // Generate regex for linear matching
-    route.pathRegex = pathToRegex(fullPath);
-
     // Check if route is static (no params)
     const isStatic = !fullPath.includes(":") && !fullPath.includes("*");
     route.isStatic = isStatic;
+
+    // Generate regex for linear matching (only if dynamic)
+    route.pathRegex = isStatic ? null : pathToRegex(fullPath);
 
     // Pre-compute handler type for fast-path dispatch
     finalizeRoute(route);
@@ -326,10 +332,7 @@ const vibe = (config = {}) => {
       staticRoutes.set(method + fullPath, route);
     }
 
-    // Add to both structures
-    trie.insert(method, fullPath, route);
-    routes.push(route);
-    options.routeCount++;
+    _addRoute(route);
   }
 
   /**
@@ -581,9 +584,7 @@ const vibe = (config = {}) => {
       intercept: null,
       media: { public: true, dest: null },
     };
-    trie.insert("GET", routePath, route);
-    routes.push(route);
-    options.routeCount++;
+    _addRoute(route);
   }
 
   /**

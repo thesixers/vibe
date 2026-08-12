@@ -2,7 +2,6 @@ import busboy from "busboy";
 import fs from "fs";
 import crypto from "crypto";
 import path from "path";
-import { EventEmitter } from "events";
 
 /**
  * Default streaming threshold (1MB)

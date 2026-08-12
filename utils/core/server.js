@@ -1,5 +1,4 @@
 import http from "http";
-import crypto from "crypto";
 import { error, getNetworkIP, handleError, isSendAble } from "./handler.js";
 import bodyParser from "./parser.js";
 import { installResponseMethods, initResponse } from "./response.js";
@@ -15,6 +14,10 @@ const NOT_FOUND_BODY = "Not Found";
 // Shared frozen empty params (avoids per-request object allocation)
 const EMPTY_PARAMS = Object.freeze(Object.create(null));
 
+// Global counter for lightning fast request IDs
+let _reqIdCounter = 0;
+const MAX_INT = Number.MAX_SAFE_INTEGER;
+
 /**
  * Creates and starts the Vibe HTTP server.
  * HEAVILY OPTIMIZED for performance
@@ -23,18 +26,65 @@ async function server(options, port, host, callback) {
   // Install response methods on prototype ONCE (zero per-request cost)
   installResponseMethods(http.ServerResponse);
 
-  // Install lazy query getter on IncomingMessage prototype ONCE
-  if (!http.IncomingMessage.prototype._vibeQueryInstalled) {
+  // Install all lazy prototype getters on IncomingMessage ONCE at startup.
+  // Installing on the prototype means zero defineProperty calls per request.
+  if (!http.IncomingMessage.prototype._vibeProtoInstalled) {
     Object.defineProperty(http.IncomingMessage.prototype, "query", {
       get() {
         if (this._parsedQuery !== undefined) return this._parsedQuery;
         this._parsedQuery =
-          this._qIdx < 0 ? {} : parseQuery(this._rawUrl.slice(this._qIdx + 1));
+          this._qIdx < 0 ? EMPTY_PARAMS : parseQuery(this._rawUrl.slice(this._qIdx + 1));
         return this._parsedQuery;
       },
       configurable: true,
     });
-    http.IncomingMessage.prototype._vibeQueryInstalled = true;
+
+    // req.id — fast auto-incrementing integer (or custom generator from options)
+    Object.defineProperty(http.IncomingMessage.prototype, "id", {
+      get() {
+        if (this._reqId === undefined) {
+          if (this._vibeGenReqId) {
+            this._reqId = this._vibeGenReqId(this);
+          } else {
+            _reqIdCounter = _reqIdCounter >= MAX_INT ? 1 : _reqIdCounter + 1;
+            this._reqId = _reqIdCounter;
+          }
+        }
+        return this._reqId;
+      },
+      configurable: true,
+    });
+
+    // req.log — child logger created lazily; requires req._vibeLogger stamped per-request
+    Object.defineProperty(http.IncomingMessage.prototype, "log", {
+      get() {
+        if (this._reqLog === undefined)
+          this._reqLog = this._vibeLogger.child({ reqId: this.id });
+        return this._reqLog;
+      },
+      configurable: true,
+    });
+
+    // req.cookies — parsed once on first access
+    Object.defineProperty(http.IncomingMessage.prototype, "cookies", {
+      get() {
+        if (this._parsedCookies !== undefined) return this._parsedCookies;
+        const header = this.headers["cookie"];
+        if (!header) return (this._parsedCookies = EMPTY_PARAMS);
+        const cookies = {};
+        for (const pair of header.split(";")) {
+          const idx = pair.indexOf("=");
+          if (idx < 0) continue;
+          const key = pair.slice(0, idx).trim();
+          const val = pair.slice(idx + 1).trim();
+          if (key) cookies[key] = decodeURIComponent(val);
+        }
+        return (this._parsedCookies = cookies);
+      },
+      configurable: true,
+    });
+
+    http.IncomingMessage.prototype._vibeProtoInstalled = true;
   }
 
   // Pre-compute everything we can
@@ -79,10 +129,10 @@ async function server(options, port, host, callback) {
   function linearMatch(method, url) {
     for (let i = 0, len = routes.length; i < len; i++) {
       const route = routes[i];
-      if (route.method !== method) continue;
+      if (route.method !== method || route.isStatic) continue;
       const result = route.pathRegex.exec(url);
       if (result) {
-        return { route, params: result.groups || {} };
+        return { route, params: result.groups || EMPTY_PARAMS };
       }
     }
     return null;
@@ -90,44 +140,10 @@ async function server(options, port, host, callback) {
 
   // Main request handler - ULTRA OPTIMIZED
   function reqListener(req, res) {
-    // Lazy req.id and req.log — UUID and child logger are only created
-    // on first access. Routes that don't log or need an ID pay zero cost.
-    let _reqId = null;
-    let _reqLog = null;
-    Object.defineProperty(req, "id", {
-      get() {
-        if (_reqId === null) _reqId = crypto.randomUUID();
-        return _reqId;
-      },
-      configurable: true,
-    });
-    Object.defineProperty(req, "log", {
-      get() {
-        if (_reqLog === null)
-          _reqLog = options.logger.child({ reqId: req.id });
-        return _reqLog;
-      },
-      configurable: true,
-    });
-
-    // Lazy req.cookies — parsed once on first access, zero cost if unused
-    Object.defineProperty(req, "cookies", {
-      get() {
-        if (this._parsedCookies !== undefined) return this._parsedCookies;
-        const header = this.headers["cookie"];
-        if (!header) return (this._parsedCookies = {});
-        const cookies = {};
-        for (const pair of header.split(";")) {
-          const idx = pair.indexOf("=");
-          if (idx < 0) continue;
-          const key = pair.slice(0, idx).trim();
-          const val = pair.slice(idx + 1).trim();
-          if (key) cookies[key] = decodeURIComponent(val);
-        }
-        return (this._parsedCookies = cookies);
-      },
-      configurable: true,
-    });
+    // Stamp the logger so the prototype req.log getter can resolve it.
+    // One cheap property assignment replaces three Object.defineProperty calls.
+    req._vibeLogger = options.logger;
+    req._vibeGenReqId = options.genReqId;
 
     if (options.loggerConfig && options.loggerConfig.lifecycle) {
       req.startTime = Date.now();
@@ -268,7 +284,7 @@ async function server(options, port, host, callback) {
 
     if (match) {
       // Static route found - O(1)
-      match = { route: match, params: {} };
+      match = { route: match, params: EMPTY_PARAMS };
     } else if (useTrieMatching) {
       match = trie.match(req.method, pathname);
     } else {

@@ -2,6 +2,8 @@ import os from "os";
 import fs from "fs";
 import { color } from "../helpers/colors.js";
 
+const HOSTNAME = os.hostname();
+
 const LOG_LEVELS = {
   trace: 10,
   debug: 20,
@@ -42,25 +44,28 @@ export class Logger {
     }
 
     if (!this.bindings.pid) this.bindings.pid = process.pid;
-    if (!this.bindings.hostname) this.bindings.hostname = os.hostname();
+    if (!this.bindings.hostname) this.bindings.hostname = HOSTNAME;
   }
 
   /**
-   * Creates a sub-logger with scoped bindings (e.g. reqId).
+   * Creates a lightweight child logger with scoped bindings (e.g. reqId).
+   * Shares all parent state — no new Logger construction, no file streams.
    */
   child(bindings) {
-    return new Logger({
-      level: Object.keys(LOG_LEVELS).find(
-        (key) => LOG_LEVELS[key] === this.level,
-      ),
-      colors: this.colors,
-      prettyPrint: this.prettyPrint,
-      lifecycle: this.lifecycle,
-      stream: this.stream,
-      dest: this.dest,
-      logFile: this.logFile,
-      bindings: { ...this.bindings, ...bindings },
-    });
+    const mergedBindings = { ...this.bindings, ...bindings };
+    const parent = this;
+
+    return {
+      level: parent.level,
+      trace(obj, msg, c) { parent._log(10, obj, msg, c, mergedBindings); },
+      debug(obj, msg, c) { parent._log(20, obj, msg, c, mergedBindings); },
+      info(obj, msg, c)  { parent._log(30, obj, msg, c, mergedBindings); },
+      warn(obj, msg, c)  { parent._log(40, obj, msg, c, mergedBindings); },
+      error(obj, msg, c) { parent._log(50, obj, msg, c, mergedBindings); },
+      fatal(obj, msg, c) { parent._log(60, obj, msg, c, mergedBindings); },
+      // Nest further children through the parent so they also stay lightweight
+      child(b) { return parent.child({ ...bindings, ...b }); },
+    };
   }
 
   trace(obj, msg, c) {
@@ -82,13 +87,13 @@ export class Logger {
     this._log(60, obj, msg, c);
   }
 
-  _log(level, obj, msg, c) {
+  _log(level, obj, msg, c, bindings) {
     if (level < this.level) return;
 
     const base = {
       level,
       time: Date.now(),
-      ...this.bindings,
+      ...(bindings || this.bindings),
     };
 
     let logData = {};

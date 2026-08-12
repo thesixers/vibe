@@ -2,44 +2,6 @@ import os from "os";
 import { color } from "../helpers/colors.js";
 
 /**
- * Parses query string from URL into an object.
- * @param {string} url
- * @returns {Object}
- */
-export function extractQuery(url) {
-  const query = {};
-  if (!url.includes("?")) return query;
-  for (const rq of url.split("?")[1].split("&")) {
-    const parts = rq.split("=");
-    if (parts.length === 2) {
-      query[parts[0]] = parts[1];
-    }
-  }
-  return query;
-}
-
-/**
- * Extracts raw parameters from URL based on route definition.
- * @param {string} routePath
- * @param {string} requestPath
- * @returns {Object}
- */
-export function extractParams(routePath, requestPath) {
-  const routeSegments = routePath.split("/").filter(Boolean);
-  const requestSegments = requestPath.split("/").filter(Boolean);
-  const params = {};
-
-  routeSegments.forEach((segment, index) => {
-    if (segment.startsWith(":")) {
-      const paramName = segment.slice(1);
-      params[paramName] = requestSegments[index];
-    }
-  });
-
-  return params;
-}
-
-/**
  * Checks if the request URL matches the route Regex.
  * @param {RegExp} pathRegex
  * @param {string} requestPath
