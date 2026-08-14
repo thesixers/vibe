@@ -22,7 +22,7 @@ const MAX_INT = Number.MAX_SAFE_INTEGER;
  * Creates and starts the Vibe HTTP server.
  * HEAVILY OPTIMIZED for performance
  */
-async function server(options, port, host, callback) {
+function server(options, port, host, callback) {
   // Install response methods on prototype ONCE (zero per-request cost)
   installResponseMethods(http.ServerResponse);
 
@@ -392,6 +392,8 @@ async function server(options, port, host, callback) {
   process.on("message", (msg) => {
     if (msg === "shutdown") shutdown();
   });
+
+  return vibe_server;
 }
 
 export default server;

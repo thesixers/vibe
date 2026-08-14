@@ -403,7 +403,7 @@ const vibe = (config = {}) => {
       host = undefined;
     }
 
-    server(options, Number(port), host, callback);
+    return server(options, Number(port), host, callback);
   }
 
   /**
